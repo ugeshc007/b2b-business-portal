@@ -160,6 +160,43 @@ describe("api", () => {
     expect(summary.body.companies[0].bankBeneficiaryName).toBe("Dealz Arabia Electronics Trading LLC");
   });
 
+  it("creates a company profile with bank details through the protected API", async () => {
+    await createUser("admin@example.com", "ChangeMe123!", "Admin");
+    const login = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "admin@example.com", password: "ChangeMe123!" })
+      .expect(200);
+
+    const created = await request(app)
+      .post("/api/catalog/companies")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .send({
+        name: "New Company",
+        legalName: "New Company Trading LLC",
+        location: "Abu Dhabi, UAE",
+        email: "new-company@example.com",
+        active: true,
+        bankName: "RAK Bank",
+        bankBeneficiaryName: "New Company Trading LLC",
+        bankAccountNumber: "123456789",
+        bankIban: "AE000000000000000000000",
+        bankBranch: "Mussafah",
+      })
+      .expect(201);
+
+    expect(created.body.name).toBe("New Company");
+    expect(created.body.active).toBe(true);
+    expect(created.body.bankName).toBe("RAK Bank");
+    expect(created.body.bankIban).toBe("AE000000000000000000000");
+
+    const summary = await request(app)
+      .get("/api/dashboard/summary")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .expect(200);
+
+    expect(summary.body.companies[0].legalName).toBe("New Company Trading LLC");
+  });
+
   it("deletes a clean company and removes setup data", async () => {
     await createUser("admin@example.com", "ChangeMe123!", "Admin");
     const company = await createCompany({

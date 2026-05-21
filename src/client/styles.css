@@ -410,6 +410,11 @@ nav .nav-button.active {
   background: #ffffff;
 }
 
+.create-company-card {
+  border-color: #b8cec1;
+  background: #fbfdfb;
+}
+
 .company-card-head {
   display: flex;
   align-items: center;
@@ -453,6 +458,10 @@ nav .nav-button.active {
 .company-active-toggle input {
   width: 18px;
   min-height: 18px;
+}
+
+.compact-toggle {
+  gap: 0;
 }
 
 .muted-text {

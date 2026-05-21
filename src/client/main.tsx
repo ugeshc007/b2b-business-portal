@@ -453,6 +453,56 @@ function App() {
     }
   }
 
+  async function createCompanyCard(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const name = String(form.get("name") ?? "").trim();
+    const legalName = String(form.get("legalName") ?? "").trim();
+    const location = String(form.get("location") ?? "").trim();
+    const emailValue = String(form.get("email") ?? "").trim();
+    const trn = String(form.get("trn") ?? "").trim();
+    const bankName = String(form.get("bankName") ?? "").trim();
+    const bankBeneficiaryName = String(form.get("bankBeneficiaryName") ?? "").trim();
+    const bankAccountNumber = String(form.get("bankAccountNumber") ?? "").trim();
+    const bankIban = String(form.get("bankIban") ?? "").trim();
+    const bankCid = String(form.get("bankCid") ?? "").trim();
+    const bankBranch = String(form.get("bankBranch") ?? "").trim();
+    const active = form.get("active") === "on";
+    if (!name || !legalName || !location || !emailValue) {
+      setMessage("Company name, legal name, address, and email are required.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const created = await request<Company>("/api/catalog/companies", {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          legalName,
+          location,
+          email: emailValue,
+          trn: trn || undefined,
+          active,
+          bankName,
+          bankBeneficiaryName,
+          bankAccountNumber,
+          bankIban,
+          bankCid,
+          bankBranch,
+        }),
+      });
+      event.currentTarget.reset();
+      setExpandedCompanyIds((current) => [...current, created.id]);
+      setMessage(`${created.name} company created.`);
+      await loadSummary();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not create company");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function deleteCompany(company: Company) {
     setConfirmationToast({
       title: "Delete company?",
@@ -1531,6 +1581,72 @@ function App() {
 
             {settingsTab === "company" && (
               <div className="company-card-list">
+                {!isCompanyPortal && (
+                  <form className="company-settings-card create-company-card" onSubmit={createCompanyCard}>
+                    <div className="company-card-head">
+                      <div>
+                        <strong>Create Company</strong>
+                        <span>Add a new company profile for portal, workflow, PO, and invoice use.</span>
+                      </div>
+                      <label className="company-active-toggle compact-toggle">
+                        <span>
+                          <input name="active" type="checkbox" defaultChecked />
+                          <span className="status-badge completed">Active</span>
+                        </span>
+                      </label>
+                    </div>
+                    <div className="company-card-fields">
+                      <label>
+                        Display Name
+                        <input name="name" placeholder="Short portal name" />
+                      </label>
+                      <label>
+                        Legal Company Name
+                        <input name="legalName" placeholder="Legal trade license name" />
+                      </label>
+                      <label>
+                        TRN / Tax Number
+                        <input name="trn" placeholder="Optional" />
+                      </label>
+                      <label>
+                        Email For PO / Invoice
+                        <input name="email" type="email" placeholder="finance@example.com" />
+                      </label>
+                      <label className="company-card-address">
+                        Address
+                        <textarea name="location" placeholder="Company address" />
+                      </label>
+                      <label>
+                        Bank Name
+                        <input name="bankName" placeholder="Optional" />
+                      </label>
+                      <label>
+                        Beneficiary Account Name
+                        <input name="bankBeneficiaryName" placeholder="Optional" />
+                      </label>
+                      <label>
+                        Account Number
+                        <input name="bankAccountNumber" placeholder="Optional" />
+                      </label>
+                      <label>
+                        IBAN Number
+                        <input name="bankIban" placeholder="Optional" />
+                      </label>
+                      <label>
+                        CID
+                        <input name="bankCid" placeholder="Optional" />
+                      </label>
+                      <label>
+                        Bank Branch
+                        <input name="bankBranch" placeholder="Optional" />
+                      </label>
+                    </div>
+                    <div className="company-card-actions">
+                      <button type="submit" disabled={loading}><Building2 size={17} /> Create Company</button>
+                      <button type="reset" className="secondary-button" disabled={loading}>Clear</button>
+                    </div>
+                  </form>
+                )}
                 {settingsCompanyOptions.map((company) => {
                   const isExpanded = expandedCompanyIds.includes(company.id);
                   return (
