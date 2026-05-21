@@ -8,6 +8,15 @@ function money(value: { toFixed(decimalPlaces: number): string } | string | numb
   return `AED ${Number(value.toString()).toFixed(2)}`;
 }
 
+function amount(value: { toString(): string } | string | number) {
+  return Number(value.toString()).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function isBuy2dayCompany(company: { name?: string | null; legalName: string; email: string }) {
+  const haystack = `${company.name ?? ""} ${company.legalName} ${company.email}`.toLowerCase();
+  return haystack.includes("buy2day") || haystack.includes("b2d");
+}
+
 export async function getPurchaseOrderPdf(orderId: string) {
   const order = await prisma.purchaseOrder.findUnique({
     where: { id: orderId },
@@ -41,17 +50,17 @@ async function writePurchaseOrderPdf(order: {
   id: string;
   poNumber: string;
   createdAt: Date;
-  subtotal: { toFixed(decimalPlaces: number): string };
-  vatAmount: { toFixed(decimalPlaces: number): string };
-  total: { toFixed(decimalPlaces: number): string };
-  buyerCompany: { legalName: string; location: string; email: string; trn: string | null };
-  sellerCompany: { legalName: string; location: string; email: string; trn: string | null };
+  subtotal: { toFixed(decimalPlaces: number): string; toString(): string };
+  vatAmount: { toFixed(decimalPlaces: number): string; toString(): string };
+  total: { toFixed(decimalPlaces: number): string; toString(): string };
+  buyerCompany: { name?: string | null; legalName: string; location: string; email: string; trn: string | null };
+  sellerCompany: { name?: string | null; legalName: string; location: string; email: string; trn: string | null };
   lines: Array<{
     quantity: number;
-    unitPrice: { toFixed(decimalPlaces: number): string };
+    unitPrice: { toFixed(decimalPlaces: number): string; toString(): string };
     vatRate: { toString(): string };
-    lineTotal: { toFixed(decimalPlaces: number): string };
-    item: { sku: string; name: string };
+    lineTotal: { toFixed(decimalPlaces: number): string; toString(): string };
+    item: { sku: string; name: string; unit?: string };
   }>;
 }) {
   const storageDir = path.resolve(process.cwd(), "storage", "purchase-orders");
@@ -60,10 +69,22 @@ async function writePurchaseOrderPdf(order: {
   const pdfPath = path.join(storageDir, `${safeNumber}.pdf`);
 
   await new Promise<void>((resolve, reject) => {
-    const doc = new PDFDocument({ size: "A4", margin: 42 });
+    const doc = new PDFDocument({ size: isBuy2dayCompany(order.buyerCompany) ? "A4" : "A4", layout: isBuy2dayCompany(order.buyerCompany) ? "landscape" : "portrait", margin: 42 });
     const stream = fs.createWriteStream(pdfPath);
     doc.pipe(stream);
-    const brand = getDocumentBrand(order.buyerCompany);
+    const brand = getDocumentBrand({
+      name: order.buyerCompany.name ?? undefined,
+      legalName: order.buyerCompany.legalName,
+      email: order.buyerCompany.email,
+    });
+
+    if (isBuy2dayCompany(order.buyerCompany)) {
+      drawBuy2dayLpoPdf(doc, order);
+      doc.end();
+      stream.on("finish", resolve);
+      stream.on("error", reject);
+      return;
+    }
 
     drawBrandHeader(doc, brand, "PURCHASE ORDER", "PO No", order.poNumber, "Date", order.createdAt.toLocaleDateString());
 
@@ -125,4 +146,146 @@ async function writePurchaseOrderPdf(order: {
     path: pdfPath,
     filename: `${order.poNumber}.pdf`,
   };
+}
+
+function drawCell(doc: PDFKit.PDFDocument, x: number, y: number, width: number, height: number, text = "", options: { bold?: boolean; align?: "left" | "center" | "right"; size?: number; color?: string } = {}) {
+  doc.rect(x, y, width, height).strokeColor("#111111").lineWidth(0.7).stroke();
+  if (!text) return;
+  doc
+    .font(options.bold ? "Helvetica-Bold" : "Helvetica")
+    .fontSize(options.size ?? 7.6)
+    .fillColor(options.color ?? "#111111")
+    .text(text, x + 3, y + 4, { width: width - 6, align: options.align ?? "left", lineGap: 1 });
+}
+
+function drawBuy2dayLpoPdf(doc: PDFKit.PDFDocument, order: {
+  poNumber: string;
+  createdAt: Date;
+  subtotal: { toString(): string };
+  vatAmount: { toString(): string };
+  total: { toString(): string };
+  buyerCompany: { legalName: string; location: string; email: string; trn: string | null };
+  sellerCompany: { legalName: string; location: string; email: string; trn: string | null };
+  lines: Array<{
+    quantity: number;
+    unitPrice: { toString(): string };
+    vatRate: { toString(): string };
+    lineTotal: { toString(): string };
+    item: { sku: string; name: string; unit?: string };
+  }>;
+}) {
+  const pageWidth = 841.89;
+  const margin = 32;
+  const width = pageWidth - margin * 2;
+  doc.rect(0, 0, 841.89, 595.28).fill("#FFFFFF");
+  doc.rect(margin, 28, width, 535).strokeColor("#111111").lineWidth(0.8).stroke();
+
+  doc.font("Helvetica-Bold").fontSize(38).fillColor("#F15B2A").text("B2D", margin + 50, 48, { width: 190 });
+  doc.font("Helvetica-Bold").fontSize(28).fillColor("#0D4E78").text("BUY2DAY", margin + 50, 86, { width: 210 });
+  doc.font("Helvetica-Bold").fontSize(15).fillColor("#111111").text(order.buyerCompany.legalName, 500, 44, { width: 285, align: "right" });
+  doc.font("Helvetica").fontSize(10).text(order.buyerCompany.location, 500, 68, { width: 285, align: "right" });
+  doc.text(`Email: ${order.buyerCompany.email}`, 500, 84, { width: 285, align: "right" });
+  doc.text(`TRN: ${order.buyerCompany.trn ?? "Not set"}`, 500, 100, { width: 285, align: "right" });
+  doc.moveTo(margin + 35, 124).lineTo(margin + width - 35, 124).stroke();
+  doc.font("Helvetica-Bold").fontSize(11).fillColor("#6D95FF").text("Purchase Order request form", margin, 138, { width, align: "center" });
+
+  const infoY = 162;
+  const leftW = 315;
+  const labelW = 190;
+  const valW = 190;
+  const dateW = 80;
+  let rowY = infoY;
+  drawCell(doc, margin, rowY, 52, 18);
+  drawCell(doc, margin + 52, rowY, leftW - 52, 18, order.sellerCompany.legalName, { size: 9 });
+  drawCell(doc, margin + leftW, rowY, labelW, 18, "Purchase Order No. / Date", { bold: true, size: 9 });
+  drawCell(doc, margin + leftW + labelW, rowY, valW, 18, order.poNumber, { size: 9 });
+  drawCell(doc, margin + leftW + labelW + valW, rowY, dateW, 18, order.createdAt.toLocaleDateString(), { size: 9 });
+
+  rowY += 18;
+  drawCell(doc, margin, rowY, 52, 36);
+  drawCell(doc, margin + 52, rowY, leftW - 52, 36, order.sellerCompany.location, { size: 7.8 });
+  drawCell(doc, margin + leftW, rowY, labelW, 36, "Ordered by", { bold: true, size: 9 });
+  drawCell(doc, margin + leftW + labelW, rowY, valW + dateW, 36, order.buyerCompany.legalName, { size: 9 });
+
+  rowY += 36;
+  drawCell(doc, margin, rowY, leftW, 18);
+  drawCell(doc, margin + leftW, rowY, labelW, 18, "Terms of Payment", { bold: true, size: 9 });
+  drawCell(doc, margin + leftW + labelW, rowY, valW + dateW, 18, "ADVANCE", { size: 9 });
+
+  rowY += 18;
+  drawCell(doc, margin, rowY, leftW, 18);
+  drawCell(doc, margin + leftW, rowY, labelW, 18, "Terms of Delivery", { bold: true, size: 9 });
+  drawCell(doc, margin + leftW + labelW, rowY, valW + dateW, 18, "IMMEDIATE AGAINST PAYMENT CONFIRMATION", { size: 8 });
+
+  rowY += 18;
+  drawCell(doc, margin, rowY, leftW, 18);
+  drawCell(doc, margin + leftW, rowY, labelW, 18, "Delivery To", { bold: true, size: 9 });
+  drawCell(doc, margin + leftW + labelW, rowY, valW + dateW, 18, order.buyerCompany.location.split(",")[0] || order.buyerCompany.location, { size: 9 });
+
+  rowY += 18;
+  drawCell(doc, margin, rowY, width, 18);
+
+  const tableY = rowY + 18;
+  const baseColumns = [
+    ["Sr. No.", 52],
+    ["Item Code", 78],
+    ["Item Description", 205],
+    ["Quantity", 110],
+    ["Unit Price", 80],
+    ["Amount", 92],
+    ["VAT Rate", 48],
+    ["VAT Amt", 48],
+    ["Total", 80],
+  ] as const;
+  const columnScale = width / baseColumns.reduce((sum, [, colWidth]) => sum + colWidth, 0);
+  const columns = baseColumns.map(([label, colWidth]) => [label, colWidth * columnScale] as const);
+
+  let x = margin;
+  for (const [label, colWidth] of columns) {
+    drawCell(doc, x, tableY, colWidth, 18, label, { bold: true, align: "center", size: 8.5 });
+    x += colWidth;
+  }
+
+  const rowHeight = 15;
+  const maxRows = 12;
+  const rows = [...order.lines];
+  for (let rowIndex = 0; rowIndex < maxRows; rowIndex += 1) {
+    const line = rows[rowIndex];
+    const y = tableY + 18 + rowIndex * rowHeight;
+    const vatAmount = line ? Number(line.lineTotal.toString()) * Number(line.vatRate.toString()) : 0;
+    const total = line ? Number(line.lineTotal.toString()) + vatAmount : 0;
+    const values = line
+      ? [
+          String(rowIndex + 1),
+          line.item.sku,
+          line.item.name,
+          Number(line.quantity).toLocaleString("en-US"),
+          amount(line.unitPrice),
+          amount(line.lineTotal),
+          Number(line.vatRate.toString()) ? `${Number(line.vatRate.toString()) * 100}%` : "-",
+          vatAmount ? amount(vatAmount) : "-",
+          amount(total),
+        ]
+      : ["", "", "", "", "", "-", "-", "-", "-"];
+    x = margin;
+    values.forEach((value, columnIndex) => {
+      const colWidth = columns[columnIndex][1];
+      drawCell(doc, x, y, colWidth, rowHeight, value, {
+        size: 7.6,
+        align: columnIndex >= 3 ? "right" : columnIndex === 2 ? "center" : "left",
+      });
+      x += colWidth;
+    });
+  }
+
+  const summaryY = tableY + 18 + maxRows * rowHeight;
+  drawCell(doc, margin, summaryY, width - 80, 18, "", { size: 8 });
+  drawCell(doc, margin + width - 80, summaryY, 80, 18, amount(order.total), { align: "right", size: 8 });
+  drawCell(doc, margin, summaryY + 18, width - 80, 18, "", { size: 8 });
+  drawCell(doc, margin + width - 80, summaryY + 18, 80, 18, "-", { align: "right", size: 8 });
+  drawCell(doc, margin, summaryY + 36, width - 80, 20, "Grant Total", { size: 9 });
+  drawCell(doc, margin + width - 80, summaryY + 36, 80, 20, amount(order.total), { align: "right", size: 8.5 });
+
+  drawCell(doc, margin, 548, 335, 15, "Name- Finance", { bold: true, size: 8.5 });
+  drawCell(doc, margin + 335, 548, width - 335, 15);
 }
