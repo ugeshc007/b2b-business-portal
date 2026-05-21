@@ -1,0 +1,16 @@
+node_modules/
+dist/
+build/
+.env
+.env.production
+*.db
+*.db-journal
+prisma/dev.db
+prisma/prod.db
+backups/
+storage/
+coverage/
+release/
+qa-output/
+qa-workflow-desktop.png
+qa-workflow-mobile.png

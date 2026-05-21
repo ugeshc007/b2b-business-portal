@@ -1,0 +1,332 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum CompanyRole {
+  BUYER
+  SELLER
+  BOTH
+}
+
+enum RequirementStatus {
+  DRAFT
+  SENT
+  QUOTED
+  APPROVED
+  ORDER_CONFIRMED
+  INVOICED
+  COMPLETED
+  HELD
+}
+
+enum EmailDirection {
+  OUTBOUND
+  INBOUND
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime @default(now())
+}
+
+model Company {
+  id        String      @id @default(cuid())
+  name      String
+  legalName String
+  trn       String?
+  role      CompanyRole @default(BOTH)
+  location  String
+  email     String      @unique
+  active    Boolean     @default(true)
+  createdAt DateTime    @default(now())
+
+  stocks         Stock[]
+  buyerTargets   MonthlyTarget[] @relation("BuyerTargets")
+  sellerTargets  MonthlyTarget[] @relation("SellerTargets")
+  buyerReqs      Requirement[]   @relation("BuyerRequirements")
+  sellerReqs     Requirement[]   @relation("SellerRequirements")
+  buyerQuotes    Quotation[]     @relation("BuyerQuotes")
+  sellerQuotes   Quotation[]     @relation("SellerQuotes")
+  buyerOrders    PurchaseOrder[] @relation("BuyerOrders")
+  sellerOrders   PurchaseOrder[] @relation("SellerOrders")
+  buyerInvoices  Invoice[]       @relation("BuyerInvoices")
+  sellerInvoices Invoice[]       @relation("SellerInvoices")
+  emailIntegration EmailIntegration?
+  turnoverTargets TurnoverTarget[]
+}
+
+model Item {
+  id             String   @id @default(cuid())
+  sku            String   @unique
+  name           String
+  unit           String   @default("pcs")
+  expectedPrice  Decimal
+  minPrice       Decimal?
+  maxPrice       Decimal?
+  vatRate        Decimal  @default(0.05)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  stocks           Stock[]
+  targetLines      MonthlyTargetLine[]
+  requirementLines RequirementLine[]
+  quotationLines   QuotationLine[]
+  orderLines       PurchaseOrderLine[]
+  invoiceLines     InvoiceLine[]
+}
+
+model Stock {
+  id        String   @id @default(cuid())
+  companyId String
+  itemId    String
+  quantity  Int      @default(0)
+  reserved  Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id])
+  item    Item    @relation(fields: [itemId], references: [id])
+
+  @@unique([companyId, itemId])
+}
+
+model MonthlyTarget {
+  id              String   @id @default(cuid())
+  buyerCompanyId  String
+  sellerCompanyId String
+  month           String
+  targetDate      String?
+  periodType      String   @default("MONTHLY")
+  dateFrom        String?
+  dateTo          String?
+  hourFrom        String?
+  hourTo          String?
+  direction       String?
+  productMode     String   @default("RANDOM")
+  amountVolume    Decimal?
+  status          String   @default("OPEN")
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  buyerCompany  Company @relation("BuyerTargets", fields: [buyerCompanyId], references: [id])
+  sellerCompany Company @relation("SellerTargets", fields: [sellerCompanyId], references: [id])
+  lines         MonthlyTargetLine[]
+  requirements  Requirement[]
+}
+
+model MonthlyTargetLine {
+  id       String  @id @default(cuid())
+  targetId String
+  itemId   String
+  quantity Int
+  maxPrice Decimal?
+
+  target MonthlyTarget @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  item   Item          @relation(fields: [itemId], references: [id])
+}
+
+model Requirement {
+  id              String            @id @default(cuid())
+  targetId        String
+  buyerCompanyId  String
+  sellerCompanyId String
+  status          RequirementStatus @default(DRAFT)
+  subject         String
+  body            String
+  createdAt       DateTime          @default(now())
+  sentAt          DateTime?
+
+  target        MonthlyTarget @relation(fields: [targetId], references: [id])
+  buyerCompany  Company       @relation("BuyerRequirements", fields: [buyerCompanyId], references: [id])
+  sellerCompany Company       @relation("SellerRequirements", fields: [sellerCompanyId], references: [id])
+  lines         RequirementLine[]
+  quotations    Quotation[]
+  emails        EmailLog[]
+}
+
+model RequirementLine {
+  id            String @id @default(cuid())
+  requirementId String
+  itemId        String
+  quantity      Int
+
+  requirement Requirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  item        Item        @relation(fields: [itemId], references: [id])
+}
+
+model Quotation {
+  id              String   @id @default(cuid())
+  requirementId   String
+  buyerCompanyId  String
+  sellerCompanyId String
+  quoteNumber     String   @unique
+  status          String   @default("SENT")
+  subtotal        Decimal
+  vatAmount       Decimal
+  total           Decimal
+  createdAt       DateTime @default(now())
+
+  requirement   Requirement @relation(fields: [requirementId], references: [id])
+  buyerCompany  Company     @relation("BuyerQuotes", fields: [buyerCompanyId], references: [id])
+  sellerCompany Company     @relation("SellerQuotes", fields: [sellerCompanyId], references: [id])
+  lines         QuotationLine[]
+  decisions     AgentDecision[]
+  purchaseOrder PurchaseOrder?
+}
+
+model QuotationLine {
+  id          String  @id @default(cuid())
+  quotationId String
+  itemId      String
+  quantity    Int
+  unitPrice   Decimal
+  vatRate     Decimal
+  lineTotal   Decimal
+
+  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  item      Item      @relation(fields: [itemId], references: [id])
+}
+
+model PurchaseOrder {
+  id              String   @id @default(cuid())
+  quotationId     String   @unique
+  buyerCompanyId  String
+  sellerCompanyId String
+  poNumber        String   @unique
+  status          String   @default("CONFIRMED")
+  subtotal        Decimal
+  vatAmount       Decimal
+  total           Decimal
+  createdAt       DateTime @default(now())
+
+  quotation     Quotation @relation(fields: [quotationId], references: [id])
+  buyerCompany  Company   @relation("BuyerOrders", fields: [buyerCompanyId], references: [id])
+  sellerCompany Company   @relation("SellerOrders", fields: [sellerCompanyId], references: [id])
+  lines         PurchaseOrderLine[]
+  invoice       Invoice?
+}
+
+model PurchaseOrderLine {
+  id              String  @id @default(cuid())
+  purchaseOrderId String
+  itemId          String
+  quantity        Int
+  unitPrice       Decimal
+  vatRate         Decimal
+  lineTotal       Decimal
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  item          Item          @relation(fields: [itemId], references: [id])
+}
+
+model Invoice {
+  id              String   @id @default(cuid())
+  purchaseOrderId String   @unique
+  buyerCompanyId  String
+  sellerCompanyId String
+  invoiceNumber   String   @unique
+  status          String   @default("ISSUED")
+  subtotal        Decimal
+  vatAmount       Decimal
+  total           Decimal
+  pdfPath         String?
+  createdAt       DateTime @default(now())
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  buyerCompany  Company      @relation("BuyerInvoices", fields: [buyerCompanyId], references: [id])
+  sellerCompany Company      @relation("SellerInvoices", fields: [sellerCompanyId], references: [id])
+  lines         InvoiceLine[]
+}
+
+model InvoiceLine {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  itemId      String
+  quantity    Int
+  unitPrice   Decimal
+  vatRate     Decimal
+  lineTotal   Decimal
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  item    Item    @relation(fields: [itemId], references: [id])
+}
+
+model EmailLog {
+  id            String         @id @default(cuid())
+  requirementId String?
+  direction     EmailDirection
+  fromEmail     String
+  toEmail       String
+  subject       String
+  body          String
+  status        String         @default("DRAFTED")
+  messageId     String?
+  attachmentPath String?
+  createdAt     DateTime       @default(now())
+
+  requirement Requirement? @relation(fields: [requirementId], references: [id])
+}
+
+model EmailIntegration {
+  id        String   @id @default(cuid())
+  companyId String   @unique
+  provider  String   @default("GMAIL")
+  email     String
+  mode      String   @default("SIMULATION")
+  status    String   @default("DISCONNECTED")
+  lastTestAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+model AgentDecision {
+  id          String   @id @default(cuid())
+  quotationId String?
+  agentName   String
+  decision    String
+  reason      String
+  createdAt   DateTime @default(now())
+
+  quotation Quotation? @relation(fields: [quotationId], references: [id])
+}
+
+model AgentAuditLog {
+  id        String   @id @default(cuid())
+  targetId  String?
+  step      String
+  status    String   @default("OK")
+  message   String
+  metadata  String?
+  createdAt DateTime @default(now())
+}
+
+model AppSetting {
+  key       String   @id
+  value     String
+  isSecret  Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+}
+
+model TurnoverTarget {
+  id        String   @id @default(cuid())
+  companyId String
+  type      String
+  month     String
+  amount    Decimal
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, type, month])
+}

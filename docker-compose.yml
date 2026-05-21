@@ -1,0 +1,10 @@
+services:
+  b2b-business:
+    build: .
+    env_file:
+      - .env.production
+    ports:
+      - "4321:4321"
+    volumes:
+      - ./prisma:/app/prisma
+    restart: unless-stopped
