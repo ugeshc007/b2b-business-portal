@@ -165,6 +165,7 @@ function App() {
   const [message, setMessage] = useState("");
   const [confirmationToast, setConfirmationToast] = useState<ConfirmationToast | null>(null);
   const [loading, setLoading] = useState(false);
+  const [agentRunning, setAgentRunning] = useState(false);
   const [activeView, setActiveView] = useState<View>("overview");
   const [settingsTab, setSettingsTab] = useState<"company" | "email" | "log" | "audit">("company");
   const [expandedCompanyIds, setExpandedCompanyIds] = useState<string[]>([]);
@@ -426,6 +427,7 @@ function App() {
       return;
     }
     setLoading(true);
+    setAgentRunning(true);
     try {
       await request(`/api/catalog/companies/${company.id}`, {
         method: "PATCH",
@@ -449,6 +451,7 @@ function App() {
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not update company profile");
     } finally {
+      setAgentRunning(false);
       setLoading(false);
     }
   }
@@ -2107,8 +2110,28 @@ function App() {
                 <span>Products: {agentPreview.products}</span>
                 <span>Invoice: {agentPreview.invoice}</span>
               </div>
+              {agentRunning && (
+                <div className="agent-progress" aria-live="polite">
+                  <div className="agent-progress-head">
+                    <span className="spinner" />
+                    <strong>Agent is working</strong>
+                    <span>Please wait. Creating documents and sending emails can take a moment.</span>
+                  </div>
+                  <div className="progress-bar"><span /></div>
+                  <div className="agent-progress-steps">
+                    <span>Parsing instruction</span>
+                    <span>Creating target</span>
+                    <span>Generating PO</span>
+                    <span>Sending email</span>
+                    <span>Refreshing data</span>
+                  </div>
+                </div>
+              )}
               <div className="workflow-form-actions">
-                <button type="submit" disabled={loading}><Play size={17} /> Start Agent</button>
+                <button type="submit" disabled={loading}>
+                  {agentRunning ? <span className="button-spinner" /> : <Play size={17} />}
+                  {agentRunning ? "Agent Running..." : "Start Agent"}
+                </button>
                 <button type="button" className="secondary-button" onClick={() => setShowAdvancedWorkflow((current) => !current)}>
                   {showAdvancedWorkflow ? "Hide Details" : "Manual Details"}
                 </button>
