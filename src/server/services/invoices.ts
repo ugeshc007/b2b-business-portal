@@ -45,7 +45,7 @@ export async function sendInvoiceEmail(invoiceId: string) {
     lineText,
     "",
     `Subtotal: AED ${invoice.subtotal.toFixed(2)}`,
-    `VAT 5%: AED ${invoice.vatAmount.toFixed(2)}`,
+    `${invoice.vatAmount.gt(0) ? "VAT 5%" : "VAT"}: AED ${invoice.vatAmount.toFixed(2)}`,
     `Total: AED ${invoice.total.toFixed(2)}`,
     `PDF Attachment: ${invoice.pdfPath}`,
   ].filter(Boolean).join("\n");

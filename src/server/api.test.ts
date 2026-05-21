@@ -176,6 +176,7 @@ describe("api", () => {
         location: "Abu Dhabi, UAE",
         email: "new-company@example.com",
         active: true,
+        vatEnabled: false,
         bankName: "RAK Bank",
         bankBeneficiaryName: "New Company Trading LLC",
         bankAccountNumber: "123456789",
@@ -186,6 +187,7 @@ describe("api", () => {
 
     expect(created.body.name).toBe("New Company");
     expect(created.body.active).toBe(true);
+    expect(created.body.vatEnabled).toBe(false);
     expect(created.body.bankName).toBe("RAK Bank");
     expect(created.body.bankIban).toBe("AE000000000000000000000");
 
@@ -195,6 +197,7 @@ describe("api", () => {
       .expect(200);
 
     expect(summary.body.companies[0].legalName).toBe("New Company Trading LLC");
+    expect(summary.body.companies[0].vatEnabled).toBe(false);
   });
 
   it("deletes a clean company and removes setup data", async () => {
@@ -841,6 +844,61 @@ describe("api", () => {
     expect(email.body.body).toContain("VAT 5%");
     expect(email.body.body).toContain("PDF Attachment:");
     expect(email.body.attachmentPath).toContain(".pdf");
+  });
+
+  it("uses the buyer company VAT setting on PO and vendor invoice", async () => {
+    await createUser("admin@example.com", "ChangeMe123!", "Admin");
+    const buyer = await createCompany({
+      name: "No VAT Buyer",
+      legalName: "No VAT Buyer LLC",
+      location: "Dubai",
+      email: "no-vat-buyer@example.com",
+      vatEnabled: false,
+    });
+    const seller = await createCompany({
+      name: "VAT Seller",
+      legalName: "VAT Seller LLC",
+      location: "Sharjah",
+      email: "vat-seller@example.com",
+    });
+    const item = await createItem({
+      sku: "NO-VAT-ITEM",
+      name: "No VAT Workflow Item",
+      unit: "pcs",
+      expectedPrice: 100,
+      maxPrice: 120,
+    });
+    await setStock(seller.id, item.id, 10);
+    const target = await createMonthlyTarget({
+      buyerCompanyId: buyer.id,
+      sellerCompanyId: seller.id,
+      month: "2026-05",
+      lines: [{ itemId: item.id, quantity: 3, maxPrice: 120 }],
+    });
+
+    const result = await runTargetWorkflow(target.id);
+    expect(result.order?.vatAmount.toString()).toBe("0");
+    expect(result.order?.total.toString()).toBe("300");
+
+    const order = await prisma.purchaseOrder.findUnique({
+      where: { id: result.order!.id },
+      include: { lines: true },
+    });
+    expect(order?.lines[0].vatRate.toString()).toBe("0");
+
+    const login = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "admin@example.com", password: "ChangeMe123!" })
+      .expect(200);
+
+    const vendorInvoice = await request(app)
+      .post(`/api/workflow/targets/${target.id}/vendor-invoice`)
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .expect(201);
+
+    expect(vendorInvoice.body.invoice.vatAmount).toBe("0");
+    expect(vendorInvoice.body.invoice.total).toBe("300");
+    expect(vendorInvoice.body.invoice.lines[0].vatRate).toBe("0");
   });
 
   it("saves and tests a Gmail integration option", async () => {

@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS Company (
   location TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE,
   active BOOLEAN NOT NULL DEFAULT true,
+  vatEnabled BOOLEAN NOT NULL DEFAULT true,
   bankName TEXT,
   bankBeneficiaryName TEXT,
   bankAccountNumber TEXT,
@@ -293,6 +294,9 @@ if (!invoiceColumns.some((column) => column.name === "pdfPath")) {
 const companyColumns = db.prepare("PRAGMA table_info(Company)").all() as Array<{ name: string }>;
 if (!companyColumns.some((column) => column.name === "active")) {
   db.exec("ALTER TABLE Company ADD COLUMN active BOOLEAN NOT NULL DEFAULT true;");
+}
+if (!companyColumns.some((column) => column.name === "vatEnabled")) {
+  db.exec("ALTER TABLE Company ADD COLUMN vatEnabled BOOLEAN NOT NULL DEFAULT true;");
 }
 const companyOptionalTextColumns = [
   "bankName",

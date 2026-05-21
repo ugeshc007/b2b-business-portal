@@ -130,7 +130,7 @@ async function writePurchaseOrderPdf(order: {
     y += 14;
     drawTotalsBox(doc, brand, y, [
       ["Subtotal", money(order.subtotal)],
-      ["VAT 5%", money(order.vatAmount)],
+      [Number(order.vatAmount.toString()) > 0 ? "VAT 5%" : "VAT", money(order.vatAmount)],
       ["Total", money(order.total)],
     ]);
 

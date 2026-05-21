@@ -672,7 +672,8 @@ export async function createQuotation(requirementId: string) {
   const lines = requirement.lines.map((line) => {
     const unitPrice = money(line.item.expectedPrice);
     const lineTotal = money(unitPrice.mul(line.quantity));
-    return { itemId: line.itemId, quantity: line.quantity, unitPrice, vatRate: line.item.vatRate, lineTotal };
+    const vatRate = requirement.buyerCompany.vatEnabled ? line.item.vatRate : new Prisma.Decimal(0);
+    return { itemId: line.itemId, quantity: line.quantity, unitPrice, vatRate, lineTotal };
   });
   const subtotal = money(lines.reduce((sum, line) => sum.plus(line.lineTotal), new Prisma.Decimal(0)));
   const vatAmount = money(lines.reduce((sum, line) => sum.plus(line.lineTotal.mul(line.vatRate)), new Prisma.Decimal(0)));
@@ -699,7 +700,11 @@ export async function createQuotation(requirementId: string) {
 export async function autoApproveQuotation(quotationId: string) {
   const quotation = await prisma.quotation.findUnique({
     where: { id: quotationId },
-    include: { lines: { include: { item: true } }, requirement: { include: { target: { include: { lines: true } } } } },
+    include: {
+      buyerCompany: true,
+      lines: { include: { item: true } },
+      requirement: { include: { target: { include: { lines: true } } } },
+    },
   });
   if (!quotation) throw new Error("Quotation not found");
 
@@ -712,7 +717,8 @@ export async function autoApproveQuotation(quotationId: string) {
     if (targetLine && line.quantity > targetLine.quantity) failures.push(`${line.item.sku} quantity exceeds target`);
     const maxPrice = targetLine?.maxPrice ?? line.item.maxPrice;
     if (maxPrice && line.unitPrice.gt(maxPrice)) failures.push(`${line.item.sku} price exceeds approval limit`);
-    if (!line.vatRate.equals(line.item.vatRate)) failures.push(`${line.item.sku} VAT rate mismatch`);
+    const expectedVatRate = quotation.buyerCompany.vatEnabled ? line.item.vatRate : new Prisma.Decimal(0);
+    if (!line.vatRate.equals(expectedVatRate)) failures.push(`${line.item.sku} VAT rate mismatch`);
   }
 
   if (failures.length) {
@@ -803,7 +809,7 @@ export async function sendPurchaseOrder(orderId: string) {
     lineText,
     "",
     `Subtotal: AED ${order.subtotal.toFixed(2)}`,
-    `VAT 5%: AED ${order.vatAmount.toFixed(2)}`,
+    `${order.vatAmount.gt(0) ? "VAT 5%" : "VAT"}: AED ${order.vatAmount.toFixed(2)}`,
     `Total: AED ${order.total.toFixed(2)}`,
     "",
     "Please issue the invoice for this same purchase order.",

@@ -8,6 +8,7 @@ export async function createCompany(data: {
   location: string;
   email: string;
   active?: boolean;
+  vatEnabled?: boolean;
   bankName?: string;
   bankBeneficiaryName?: string;
   bankAccountNumber?: string;
@@ -15,7 +16,9 @@ export async function createCompany(data: {
   bankCid?: string;
   bankBranch?: string;
 }) {
-  return prisma.company.create({ data: { ...data, active: data.active ?? true, role: "BOTH" } });
+  return prisma.company.create({
+    data: { ...data, active: data.active ?? true, vatEnabled: data.vatEnabled ?? true, role: "BOTH" },
+  });
 }
 
 export async function updateCompany(companyId: string, data: {
@@ -25,6 +28,7 @@ export async function updateCompany(companyId: string, data: {
   location: string;
   email: string;
   active?: boolean;
+  vatEnabled?: boolean;
   bankName?: string;
   bankBeneficiaryName?: string;
   bankAccountNumber?: string;
@@ -44,6 +48,7 @@ export async function updateCompany(companyId: string, data: {
       location: data.location,
       email: data.email,
       active: data.active,
+      vatEnabled: data.vatEnabled,
       bankName: data.bankName || null,
       bankBeneficiaryName: data.bankBeneficiaryName || null,
       bankAccountNumber: data.bankAccountNumber || null,

@@ -235,7 +235,7 @@ function drawBuy2dayInvoicePdf(doc: PDFKit.PDFDocument, invoice: InvoicePdfData)
     ["Gross Amount", amount(invoice.subtotal)],
     ["Less: Discount", "0.00"],
     ["Net Amount", amount(invoice.subtotal)],
-    ["VAT 5% Amount", amount(invoice.vatAmount)],
+    [Number(invoice.vatAmount.toString()) > 0 ? "VAT 5% Amount" : "VAT Amount", amount(invoice.vatAmount)],
     ["Total Value", amount(invoice.total)],
   ];
   let totalY = bankY + 24;
@@ -347,7 +347,7 @@ export async function generateInvoicePdf(invoiceId: string) {
     y += 14;
     drawTotalsBox(doc, brand, y, [
       ["Subtotal", money(invoice.subtotal)],
-      ["VAT 5%", money(invoice.vatAmount)],
+      [Number(invoice.vatAmount.toString()) > 0 ? "VAT 5%" : "VAT", money(invoice.vatAmount)],
       ["Total", money(invoice.total)],
     ]);
 

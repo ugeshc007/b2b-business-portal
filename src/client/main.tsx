@@ -16,6 +16,7 @@ type Company = {
   location: string;
   trn?: string;
   active?: boolean;
+  vatEnabled?: boolean;
   bankName?: string;
   bankBeneficiaryName?: string;
   bankAccountNumber?: string;
@@ -422,6 +423,7 @@ function App() {
     const bankCid = String(form.get("bankCid") ?? "").trim();
     const bankBranch = String(form.get("bankBranch") ?? "").trim();
     const active = form.get("active") === "on";
+    const vatEnabled = form.get("vatEnabled") === "on";
     if (!name || !legalName || !location || !emailValue) {
       setMessage("Company name, legal name, address, and email are required.");
       return;
@@ -438,6 +440,7 @@ function App() {
           email: emailValue,
           trn: trn || undefined,
           active,
+          vatEnabled,
           bankName,
           bankBeneficiaryName,
           bankAccountNumber,
@@ -471,6 +474,7 @@ function App() {
     const bankCid = String(form.get("bankCid") ?? "").trim();
     const bankBranch = String(form.get("bankBranch") ?? "").trim();
     const active = form.get("active") === "on";
+    const vatEnabled = form.get("vatEnabled") === "on";
     if (!name || !legalName || !location || !emailValue) {
       setMessage("Company name, legal name, address, and email are required.");
       return;
@@ -487,6 +491,7 @@ function App() {
           email: emailValue,
           trn: trn || undefined,
           active,
+          vatEnabled,
           bankName,
           bankBeneficiaryName,
           bankAccountNumber,
@@ -1597,6 +1602,12 @@ function App() {
                           <span className="status-badge completed">Active</span>
                         </span>
                       </label>
+                      <label className="company-active-toggle compact-toggle">
+                        <span>
+                          <input name="vatEnabled" type="checkbox" defaultChecked />
+                          <span className="status-badge completed">VAT On</span>
+                        </span>
+                      </label>
                     </div>
                     <div className="company-card-fields">
                       <label>
@@ -1689,8 +1700,15 @@ function App() {
                             <label className="company-active-toggle">
                               Active Company
                               <span>
-                                <input name="active" type="checkbox" defaultChecked={company.active !== false} />
-                                <span className="muted-text">Show this company in portals and workflow menus</span>
+                              <input name="active" type="checkbox" defaultChecked={company.active !== false} />
+                              <span className="muted-text">Show this company in portals and workflow menus</span>
+                            </span>
+                          </label>
+                            <label className="company-active-toggle">
+                              Workflow VAT
+                              <span>
+                                <input name="vatEnabled" type="checkbox" defaultChecked={company.vatEnabled !== false} />
+                                <span className="muted-text">Apply VAT in PO and invoice workflow</span>
                               </span>
                             </label>
                             <label className="company-card-address">
@@ -1740,6 +1758,7 @@ function App() {
                                       email: company.email,
                                       trn: company.trn || undefined,
                                       active: company.active === false,
+                                      vatEnabled: company.vatEnabled !== false,
                                       bankName: company.bankName || undefined,
                                       bankBeneficiaryName: company.bankBeneficiaryName || undefined,
                                       bankAccountNumber: company.bankAccountNumber || undefined,

@@ -46,6 +46,7 @@ model Company {
   location  String
   email     String      @unique
   active    Boolean     @default(true)
+  vatEnabled Boolean    @default(true)
   bankName              String?
   bankBeneficiaryName   String?
   bankAccountNumber     String?
