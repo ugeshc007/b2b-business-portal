@@ -46,6 +46,12 @@ model Company {
   location  String
   email     String      @unique
   active    Boolean     @default(true)
+  bankName              String?
+  bankBeneficiaryName   String?
+  bankAccountNumber     String?
+  bankIban              String?
+  bankCid               String?
+  bankBranch            String?
   createdAt DateTime    @default(now())
 
   stocks         Stock[]

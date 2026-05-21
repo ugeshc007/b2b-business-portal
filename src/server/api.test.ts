@@ -136,12 +136,20 @@ describe("api", () => {
         location: "Office 1201, Dubai, UAE",
         email: "profile-new@example.com",
         trn: "100123456789000",
+        bankName: "ADCB",
+        bankBeneficiaryName: "Dealz Arabia Electronics Trading LLC",
+        bankAccountNumber: "14213322920001",
+        bankIban: "AE470030014213322920001",
+        bankCid: "14213322",
+        bankBranch: "Al Rigga Road",
       })
       .expect(200);
 
     expect(updated.body.legalName).toBe("Dealz Arabia FZ LLC");
     expect(updated.body.location).toContain("Dubai");
     expect(updated.body.trn).toBe("100123456789000");
+    expect(updated.body.bankName).toBe("ADCB");
+    expect(updated.body.bankIban).toBe("AE470030014213322920001");
 
     const summary = await request(app)
       .get("/api/dashboard/summary")
@@ -149,6 +157,7 @@ describe("api", () => {
       .expect(200);
 
     expect(summary.body.companies[0].email).toBe("profile-new@example.com");
+    expect(summary.body.companies[0].bankBeneficiaryName).toBe("Dealz Arabia Electronics Trading LLC");
   });
 
   it("deletes a clean company and removes setup data", async () => {

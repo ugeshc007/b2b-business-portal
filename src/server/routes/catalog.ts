@@ -23,6 +23,12 @@ catalogRouter.post("/companies", async (req, res, next) => {
       location: z.string().min(2),
       email: z.string().email(),
       active: z.boolean().optional(),
+      bankName: z.string().optional(),
+      bankBeneficiaryName: z.string().optional(),
+      bankAccountNumber: z.string().optional(),
+      bankIban: z.string().optional(),
+      bankCid: z.string().optional(),
+      bankBranch: z.string().optional(),
     }).parse(req.body);
     res.status(201).json(await createCompany(input));
   } catch (error) {
@@ -39,10 +45,22 @@ catalogRouter.patch("/companies/:id", async (req, res, next) => {
       location: z.string().min(2),
       email: z.string().email(),
       active: z.boolean().optional(),
+      bankName: z.string().optional().or(z.literal("")),
+      bankBeneficiaryName: z.string().optional().or(z.literal("")),
+      bankAccountNumber: z.string().optional().or(z.literal("")),
+      bankIban: z.string().optional().or(z.literal("")),
+      bankCid: z.string().optional().or(z.literal("")),
+      bankBranch: z.string().optional().or(z.literal("")),
     }).parse(req.body);
     res.json(await updateCompany(req.params.id, {
       ...input,
       trn: input.trn || undefined,
+      bankName: input.bankName || undefined,
+      bankBeneficiaryName: input.bankBeneficiaryName || undefined,
+      bankAccountNumber: input.bankAccountNumber || undefined,
+      bankIban: input.bankIban || undefined,
+      bankCid: input.bankCid || undefined,
+      bankBranch: input.bankBranch || undefined,
     }));
   } catch (error) {
     next(error);

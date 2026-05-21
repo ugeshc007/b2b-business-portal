@@ -8,7 +8,21 @@ const portalSlug = window.location.pathname.split("/").filter(Boolean)[0]?.toLow
 const portalCompanyName = ["dealz", "dealzarabia"].includes(portalSlug) ? "Dealzarabia" : portalSlug === "buy2day" ? "Buy2day" : "";
 const isCompanyPortal = Boolean(portalCompanyName);
 
-type Company = { id: string; name: string; legalName: string; email: string; location: string; trn?: string; active?: boolean };
+type Company = {
+  id: string;
+  name: string;
+  legalName: string;
+  email: string;
+  location: string;
+  trn?: string;
+  active?: boolean;
+  bankName?: string;
+  bankBeneficiaryName?: string;
+  bankAccountNumber?: string;
+  bankIban?: string;
+  bankCid?: string;
+  bankBranch?: string;
+};
 type Item = { id: string; sku: string; name: string; unit: string; expectedPrice: string; maxPrice?: string };
 type Stock = { id: string; quantity: number; company: Company; item: Item };
 type Target = {
@@ -400,6 +414,12 @@ function App() {
     const location = String(form.get("location") ?? "").trim();
     const emailValue = String(form.get("email") ?? "").trim();
     const trn = String(form.get("trn") ?? "").trim();
+    const bankName = String(form.get("bankName") ?? "").trim();
+    const bankBeneficiaryName = String(form.get("bankBeneficiaryName") ?? "").trim();
+    const bankAccountNumber = String(form.get("bankAccountNumber") ?? "").trim();
+    const bankIban = String(form.get("bankIban") ?? "").trim();
+    const bankCid = String(form.get("bankCid") ?? "").trim();
+    const bankBranch = String(form.get("bankBranch") ?? "").trim();
     const active = form.get("active") === "on";
     if (!name || !legalName || !location || !emailValue) {
       setMessage("Company name, legal name, address, and email are required.");
@@ -416,6 +436,12 @@ function App() {
           email: emailValue,
           trn: trn || undefined,
           active,
+          bankName,
+          bankBeneficiaryName,
+          bankAccountNumber,
+          bankIban,
+          bankCid,
+          bankBranch,
         }),
       });
       setMessage(`${name} profile saved.`);
@@ -1552,6 +1578,30 @@ function App() {
                               Address
                               <textarea name="location" defaultValue={company.location} />
                             </label>
+                            <label>
+                              Bank Name
+                              <input name="bankName" defaultValue={company.bankName ?? ""} placeholder="Optional" />
+                            </label>
+                            <label>
+                              Beneficiary Account Name
+                              <input name="bankBeneficiaryName" defaultValue={company.bankBeneficiaryName ?? ""} placeholder="Optional" />
+                            </label>
+                            <label>
+                              Account Number
+                              <input name="bankAccountNumber" defaultValue={company.bankAccountNumber ?? ""} placeholder="Optional" />
+                            </label>
+                            <label>
+                              IBAN Number
+                              <input name="bankIban" defaultValue={company.bankIban ?? ""} placeholder="Optional" />
+                            </label>
+                            <label>
+                              CID
+                              <input name="bankCid" defaultValue={company.bankCid ?? ""} placeholder="Optional" />
+                            </label>
+                            <label>
+                              Bank Branch
+                              <input name="bankBranch" defaultValue={company.bankBranch ?? ""} placeholder="Optional" />
+                            </label>
                           </div>
                           <div className="company-card-actions">
                             <button type="submit" disabled={loading}><Save size={17} /> Save Company</button>
@@ -1571,6 +1621,12 @@ function App() {
                                       email: company.email,
                                       trn: company.trn || undefined,
                                       active: company.active === false,
+                                      bankName: company.bankName || undefined,
+                                      bankBeneficiaryName: company.bankBeneficiaryName || undefined,
+                                      bankAccountNumber: company.bankAccountNumber || undefined,
+                                      bankIban: company.bankIban || undefined,
+                                      bankCid: company.bankCid || undefined,
+                                      bankBranch: company.bankBranch || undefined,
                                     }),
                                   });
                                   setMessage(`${company.name} ${company.active === false ? "activated" : "deactivated"}.`);

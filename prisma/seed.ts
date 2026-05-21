@@ -51,6 +51,22 @@ async function main() {
     email: "dealzinvoice@gmail.com",
   });
 
+  await prisma.company.update({
+    where: { id: companyA.id },
+    data: {
+      legalName: "Dealzarabia Electronics Trading L.L.C -AUH Branch",
+      trn: null,
+      location: "Abu Dhabi Industrial City Company for Chemicals, Building ~0/1, AKIA, Abu Dhabi Industrial City, Abu Dhabi",
+      email: "dealzinvoice@gmail.com",
+      bankName: "ADCB",
+      bankBeneficiaryName: "DEALZ ARABIA ELECTRONICS TRADING LLC.",
+      bankAccountNumber: "14213322920001",
+      bankIban: "AE470030014213322920001",
+      bankCid: "14213322",
+      bankBranch: "AL RIGGAH ROAD , AL RIGGAH ROAD",
+    },
+  });
+
   const companyB = await upsertCompanyByName({
     name: "Buy2day",
     legalName: "Buy2day Distribution LLC",

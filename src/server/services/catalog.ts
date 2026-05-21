@@ -8,6 +8,12 @@ export async function createCompany(data: {
   location: string;
   email: string;
   active?: boolean;
+  bankName?: string;
+  bankBeneficiaryName?: string;
+  bankAccountNumber?: string;
+  bankIban?: string;
+  bankCid?: string;
+  bankBranch?: string;
 }) {
   return prisma.company.create({ data: { ...data, active: data.active ?? true, role: "BOTH" } });
 }
@@ -19,6 +25,12 @@ export async function updateCompany(companyId: string, data: {
   location: string;
   email: string;
   active?: boolean;
+  bankName?: string;
+  bankBeneficiaryName?: string;
+  bankAccountNumber?: string;
+  bankIban?: string;
+  bankCid?: string;
+  bankBranch?: string;
 }) {
   const company = await prisma.company.findUnique({ where: { id: companyId } });
   if (!company) throw new Error("Company not found");
@@ -32,6 +44,12 @@ export async function updateCompany(companyId: string, data: {
       location: data.location,
       email: data.email,
       active: data.active,
+      bankName: data.bankName || null,
+      bankBeneficiaryName: data.bankBeneficiaryName || null,
+      bankAccountNumber: data.bankAccountNumber || null,
+      bankIban: data.bankIban || null,
+      bankCid: data.bankCid || null,
+      bankBranch: data.bankBranch || null,
     },
   });
 }
