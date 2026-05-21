@@ -69,10 +69,24 @@ async function main() {
 
   const companyB = await upsertCompanyByName({
     name: "Buy2day",
-    legalName: "Buy2day Distribution LLC",
+    legalName: "Buy2Day Electronic Trading LLC",
     trn: "100000000000002",
-    location: "Sharjah, UAE",
+    location: "Mussafah, Abu Dhabi, UAE",
     email: "b2dfinance01@gmail.com",
+  });
+
+  await prisma.company.update({
+    where: { id: companyB.id },
+    data: {
+      legalName: "Buy2Day Electronic Trading LLC",
+      location: "Mussafah, Abu Dhabi, UAE",
+      bankName: "RAK Bank",
+      bankBeneficiaryName: "BUY2DAY ELECTRONIC TRADING L.L.C",
+      bankAccountNumber: "0393533217001",
+      bankIban: "AE910400000393533217001",
+      bankCid: null,
+      bankBranch: "BANK REF: 2081502 MUSSAFAH, ABU DHABI",
+    },
   });
 
   const item = await prisma.item.upsert({
