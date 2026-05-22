@@ -50,7 +50,7 @@ if ($robocopyExit -gt 7) {
 
 Push-Location $AppDir
 try {
-  npm ci
+  npm install
   $env:DATABASE_URL = "file:./dev.db"
   npm run prisma:generate
   npm run db:init
