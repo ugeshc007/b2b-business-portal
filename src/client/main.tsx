@@ -267,6 +267,10 @@ function App() {
       },
     });
     const data = await response.json();
+    if (response.status === 401) {
+      localStorage.removeItem("b2b-token");
+      setToken("");
+    }
     if (!response.ok) throw new Error(data.error ?? "Request failed");
     return data;
   }
@@ -1352,6 +1356,10 @@ function App() {
     : summary?.turnoverTargets.filter((target) => target.companyId === companyScopeId) ?? [];
   const activeCompanies = (summary?.companies ?? []).filter((company) => company.active !== false);
   const activePortalLinks: Array<{ href: string; label: string }> = [];
+  const fallbackPortalLinks = [
+    { href: "/dealz", label: "Dealz" },
+    { href: "/buy2day", label: "Buy2day" },
+  ];
   for (const company of activeCompanies) {
     const haystack = `${company.name} ${company.legalName}`.toLowerCase();
     const link = haystack.includes("dealzarabia") || haystack.includes("dealz")
@@ -1361,6 +1369,7 @@ function App() {
         : null;
     if (link && !activePortalLinks.some((item) => item.href === link.href)) activePortalLinks.push(link);
   }
+  const sidebarPortalLinks = summary ? activePortalLinks : fallbackPortalLinks;
   const visibleCompanyOptions = isCompanyPortal ? scopedCompanies : activeCompanies;
   const settingsCompanyOptions = isCompanyPortal ? scopedCompanies : summary?.companies ?? [];
   const workflowSellerId = workflowDirection === "PURCHASE" ? workflowCounterpartyId : workflowCompanyId;
@@ -1419,7 +1428,7 @@ function App() {
           <strong>{portalTitle}</strong>
         </div>
         <div className="portal-links">
-          {activePortalLinks.map((link) => <a href={link.href} key={link.href}>{link.label}</a>)}
+          {sidebarPortalLinks.map((link) => <a href={link.href} key={link.href}>{link.label}</a>)}
           <a href="/">Admin</a>
         </div>
         <nav>
