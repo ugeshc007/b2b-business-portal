@@ -13,13 +13,13 @@ winget install OpenJS.NodeJS.LTS Git.Git
 Create the app folder:
 
 ```powershell
-New-Item -ItemType Directory -Force C:\apps\b2b-business-portal
+New-Item -ItemType Directory -Force C:\NEW\b2b-business-code
 ```
 
 Copy `.env.production.example` to:
 
 ```text
-C:\apps\b2b-business-portal\.env.production
+C:\NEW\b2b-business-code\.env.production
 ```
 
 Set production values inside `.env.production`, especially:
@@ -68,7 +68,7 @@ Settings > Secrets and variables > Actions > Variables
 Add:
 
 ```text
-DEPLOY_APP_DIR=C:\apps\b2b-business-portal
+DEPLOY_APP_DIR=C:\NEW\b2b-business-code
 DEPLOY_SERVICE_NAME=B2BBusinessPortal
 ```
 
@@ -86,7 +86,7 @@ The workflow will:
 - build the app
 - run deployment on your Windows Server runner
 - backup SQLite before deployment
-- copy latest code to `C:\apps\b2b-business-portal`
+- copy latest code to `C:\NEW\b2b-business-code`
 - install dependencies
 - generate Prisma client
 - initialize database columns
@@ -100,7 +100,7 @@ The deploy script restarts an existing service named `B2BBusinessPortal`. If you
 ```text
 Program: C:\Program Files\nodejs\npm.cmd
 Arguments: run start:prod
-Startup directory: C:\apps\b2b-business-portal
+Startup directory: C:\NEW\b2b-business-code
 ```
 
 Then start:

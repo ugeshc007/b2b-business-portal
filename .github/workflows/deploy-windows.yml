@@ -61,4 +61,7 @@ jobs:
         env:
           DEPLOY_APP_DIR: ${{ vars.DEPLOY_APP_DIR }}
           DEPLOY_SERVICE_NAME: ${{ vars.DEPLOY_SERVICE_NAME }}
-        run: powershell -ExecutionPolicy Bypass -File .\scripts\deploy-windows.ps1
+        run: |
+          $appDir = if ([string]::IsNullOrWhiteSpace($env:DEPLOY_APP_DIR)) { "C:\NEW\b2b-business-code" } else { $env:DEPLOY_APP_DIR }
+          $serviceName = if ([string]::IsNullOrWhiteSpace($env:DEPLOY_SERVICE_NAME)) { "B2BBusinessPortal" } else { $env:DEPLOY_SERVICE_NAME }
+          powershell -ExecutionPolicy Bypass -File .\scripts\deploy-windows.ps1 -AppDir $appDir -ServiceName $serviceName
