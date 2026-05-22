@@ -1,0 +1,64 @@
+name: Deploy Windows Server
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: windows-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Test and build
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare test database
+        shell: powershell
+        run: |
+          $env:SQLITE_DB_PATH = "$env:RUNNER_TEMP\b2b-business-test.db"
+          npm run db:init -- --reset
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+
+      - name: Run tests
+        shell: powershell
+        run: |
+          $env:SQLITE_DB_PATH = "$env:RUNNER_TEMP\b2b-business-test.db"
+          npm test
+
+      - name: Build
+        run: npm run build
+
+  deploy:
+    name: Deploy to Windows server
+    needs: test
+    runs-on:
+      - self-hosted
+      - windows
+      - b2b-production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy application
+        shell: powershell
+        env:
+          DEPLOY_APP_DIR: ${{ vars.DEPLOY_APP_DIR }}
+          DEPLOY_SERVICE_NAME: ${{ vars.DEPLOY_SERVICE_NAME }}
+        run: powershell -ExecutionPolicy Bypass -File .\scripts\deploy-windows.ps1
