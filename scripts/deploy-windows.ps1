@@ -15,7 +15,8 @@ if ([string]::IsNullOrWhiteSpace($ServiceName)) {
 
 $SourceDir = if ($env:GITHUB_WORKSPACE) { $env:GITHUB_WORKSPACE } else { (Resolve-Path ".").Path }
 if (![System.IO.Path]::IsPathRooted($AppDir)) {
-  throw "DEPLOY_APP_DIR must be a full Windows path like C:\NEW\b2b-business-code. Current value: $AppDir"
+  Write-Warning "DEPLOY_APP_DIR must be a full Windows path like C:\NEW\b2b-business-code. Current value: $AppDir. Using C:\NEW\b2b-business-code."
+  $AppDir = "C:\NEW\b2b-business-code"
 }
 $AppDir = [System.IO.Path]::GetFullPath($AppDir)
 $BackupDir = Join-Path $AppDir "backups"

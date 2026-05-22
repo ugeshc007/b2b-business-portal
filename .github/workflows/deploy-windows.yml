@@ -63,5 +63,9 @@ jobs:
           DEPLOY_SERVICE_NAME: ${{ vars.DEPLOY_SERVICE_NAME }}
         run: |
           $appDir = if ([string]::IsNullOrWhiteSpace($env:DEPLOY_APP_DIR)) { "C:\NEW\b2b-business-code" } else { $env:DEPLOY_APP_DIR }
+          if (![System.IO.Path]::IsPathRooted($appDir)) {
+            Write-Warning "DEPLOY_APP_DIR is not a full path: $appDir. Using C:\NEW\b2b-business-code."
+            $appDir = "C:\NEW\b2b-business-code"
+          }
           $serviceName = if ([string]::IsNullOrWhiteSpace($env:DEPLOY_SERVICE_NAME)) { "B2BBusinessPortal" } else { $env:DEPLOY_SERVICE_NAME }
           powershell -ExecutionPolicy Bypass -File .\scripts\deploy-windows.ps1 -AppDir $appDir -ServiceName $serviceName
