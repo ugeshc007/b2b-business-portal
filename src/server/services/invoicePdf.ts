@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import PDFDocument from "pdfkit";
 import { prisma } from "../db";
-import { drawBrandHeader, drawSectionLabel, drawTableHeader, drawTotalsBox, getDocumentBrand } from "./documentBrand";
+import { drawBrandHeader, drawBrandLogo, drawSectionLabel, drawTableHeader, drawTotalsBox, getDocumentBrand } from "./documentBrand";
 
 function money(value: { toString(): string } | string | number) {
   return `AED ${Number(value.toString()).toFixed(2)}`;
@@ -138,8 +138,10 @@ function drawTemplateCompany(doc: PDFKit.PDFDocument, title: string, company: { 
 function drawBuy2dayInvoicePdf(doc: PDFKit.PDFDocument, invoice: InvoicePdfData) {
   doc.rect(0, 0, 595.28, 841.89).fill("#FFFFFF");
   doc.fillColor("#111111");
+  const brand = getDocumentBrand(invoice.sellerCompany);
 
-  doc.font("Helvetica-Bold").fontSize(16).text(invoice.sellerCompany.legalName, 42, 44, { width: 230 });
+  drawBrandLogo(doc, brand, 42, 34, 178, 54, { background: false, padding: 0 });
+  doc.font("Helvetica-Bold").fontSize(10).text(invoice.sellerCompany.legalName, 42, 94, { width: 230 });
   doc.font("Helvetica").fontSize(8.5).text(invoice.sellerCompany.location, 330, 42, { width: 220, align: "right", lineGap: 1 });
   doc.text(`Email: ${invoice.sellerCompany.email}`, 330, doc.y + 2, { width: 220, align: "right" });
   doc.text(`TRN No: ${invoice.sellerCompany.trn ?? "Not set"}`, 330, doc.y + 2, { width: 220, align: "right" });

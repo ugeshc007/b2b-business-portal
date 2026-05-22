@@ -1,5 +1,8 @@
+import fs from "node:fs";
+import path from "node:path";
+
 type BrandCompany = {
-  name?: string;
+  name?: string | null;
   legalName: string;
   email: string;
 };
@@ -11,6 +14,7 @@ type DocumentBrand = {
   pale: string;
   text: string;
   pattern: "diagonal" | "dots";
+  logoFile: string;
 };
 
 export function getDocumentBrand(company: BrandCompany): DocumentBrand {
@@ -23,6 +27,7 @@ export function getDocumentBrand(company: BrandCompany): DocumentBrand {
       pale: "#EAF3FA",
       text: "#162331",
       pattern: "dots",
+      logoFile: "buy2day-logo.png",
     };
   }
 
@@ -33,7 +38,39 @@ export function getDocumentBrand(company: BrandCompany): DocumentBrand {
     pale: "#EEF6F1",
     text: "#17211B",
     pattern: "diagonal",
+    logoFile: "dealz-logo.png",
   };
+}
+
+export function getBrandLogoPath(brand: DocumentBrand) {
+  return path.resolve(process.cwd(), "public", "brand", brand.logoFile);
+}
+
+export function drawBrandLogo(
+  doc: PDFKit.PDFDocument,
+  brand: DocumentBrand,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  options: { background?: boolean; padding?: number } = {},
+) {
+  const padding = options.padding ?? 8;
+  doc.save();
+  if (options.background !== false) {
+    doc.roundedRect(x, y, width, height, 6).fill("#FFFFFF");
+  }
+  const logoPath = getBrandLogoPath(brand);
+  if (fs.existsSync(logoPath)) {
+    doc.image(logoPath, x + padding, y + padding, {
+      fit: [width - padding * 2, height - padding * 2],
+      align: "center",
+      valign: "center",
+    });
+  } else {
+    doc.fillColor(options.background === false ? "#111111" : brand.primary).font("Helvetica-Bold").fontSize(13).text(brand.label, x + padding, y + height / 2 - 7, { width: width - padding * 2, align: "center" });
+  }
+  doc.restore();
 }
 
 export function drawBrandHeader(doc: PDFKit.PDFDocument, brand: DocumentBrand, title: string, numberLabel: string, numberValue: string, dateLabel: string, dateValue: string, extraLabel?: string, extraValue?: string) {
@@ -56,8 +93,8 @@ export function drawBrandHeader(doc: PDFKit.PDFDocument, brand: DocumentBrand, t
   }
   doc.restore();
 
-  doc.fillColor("#FFFFFF").font("Helvetica-Bold").fontSize(13).text(brand.label, 42, 30, { width: 180 });
-  doc.fontSize(22).text(title, 250, 28, { width: 300, align: "right" });
+  drawBrandLogo(doc, brand, 42, 24, 128, 58, { background: true, padding: 7 });
+  doc.fillColor("#FFFFFF").font("Helvetica-Bold").fontSize(22).text(title, 250, 28, { width: 300, align: "right" });
   doc.font("Helvetica").fontSize(10).text(`${numberLabel}: ${numberValue}`, 330, 62, { width: 220, align: "right" });
   doc.text(`${dateLabel}: ${dateValue}`, 330, 78, { width: 220, align: "right" });
   if (extraLabel && extraValue) doc.text(`${extraLabel}: ${extraValue}`, 330, 94, { width: 220, align: "right" });

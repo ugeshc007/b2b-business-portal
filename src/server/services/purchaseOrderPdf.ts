@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import PDFDocument from "pdfkit";
 import { prisma } from "../db";
-import { drawBrandHeader, drawSectionLabel, drawTableHeader, drawTotalsBox, getDocumentBrand } from "./documentBrand";
+import { drawBrandHeader, drawBrandLogo, drawSectionLabel, drawTableHeader, drawTotalsBox, getDocumentBrand } from "./documentBrand";
 
 function money(value: { toFixed(decimalPlaces: number): string } | string | number) {
   return `AED ${Number(value.toString()).toFixed(2)}`;
@@ -179,9 +179,9 @@ function drawBuy2dayLpoPdf(doc: PDFKit.PDFDocument, order: {
   const width = pageWidth - margin * 2;
   doc.rect(0, 0, 841.89, 595.28).fill("#FFFFFF");
   doc.rect(margin, 28, width, 535).strokeColor("#111111").lineWidth(0.8).stroke();
+  const brand = getDocumentBrand(order.buyerCompany);
 
-  doc.font("Helvetica-Bold").fontSize(38).fillColor("#F15B2A").text("B2D", margin + 50, 48, { width: 190 });
-  doc.font("Helvetica-Bold").fontSize(28).fillColor("#0D4E78").text("BUY2DAY", margin + 50, 86, { width: 210 });
+  drawBrandLogo(doc, brand, margin + 42, 46, 235, 70, { background: false, padding: 0 });
   doc.font("Helvetica-Bold").fontSize(15).fillColor("#111111").text(order.buyerCompany.legalName, 500, 44, { width: 285, align: "right" });
   doc.font("Helvetica").fontSize(10).text(order.buyerCompany.location, 500, 68, { width: 285, align: "right" });
   doc.text(`Email: ${order.buyerCompany.email}`, 500, 84, { width: 285, align: "right" });
