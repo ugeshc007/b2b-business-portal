@@ -2084,6 +2084,45 @@ function App() {
 
         {activeView === "ecommerce" && (
           <Panel title="Ecom Products">
+            <section className="ecom-promo-shell">
+              <div className="ecom-hero-promo">
+                <small>RECHARGE SERVICE</small>
+                <strong>ULTRA FAST RECHARGE</strong>
+                <span>Mobile top-up, game cards, gift cards, and Salik vouchers</span>
+                <b>GAMES</b>
+              </div>
+              <div className="ecom-category-grid">
+                <div className="ecom-category-card mobile">
+                  <small>MOBILE</small>
+                  <strong>Telecom Recharge</strong>
+                  <span>Etisalat and du top-up vouchers</span>
+                  <b>TEL</b>
+                </div>
+                <div className="ecom-category-card game">
+                  <small>GAME</small>
+                  <strong>Game Cards</strong>
+                  <span>PUBG, Free Fire, and gaming wallet cards</span>
+                  <b>UC</b>
+                </div>
+                <div className="ecom-category-card gift">
+                  <small>GIFT</small>
+                  <strong>Gift Cards</strong>
+                  <span>Store cards and digital vouchers</span>
+                  <b>GIFT</b>
+                </div>
+                <div className="ecom-category-card road">
+                  <small>ROAD</small>
+                  <strong>Road Voucher</strong>
+                  <span>Salik and road balance vouchers</span>
+                  <b>ROAD</b>
+                </div>
+              </div>
+              <div className="ecom-special-promo">
+                <small>SPECIAL PROMOTION</small>
+                <strong>Special Products</strong>
+                <span>Ecommerce offers and promotional vouchers</span>
+              </div>
+            </section>
             <div className="ecom-product-grid">
               {ecommerceProductRows.map((stock) => (
                 <article className="ecom-product-card" key={stock.id}>
