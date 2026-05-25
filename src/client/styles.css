@@ -749,6 +749,18 @@ nav .nav-button.active {
   grid-template-columns: 1.1fr 1fr 1.5fr 0.8fr 0.8fr auto;
 }
 
+.ecom-status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.ecom-status-actions button {
+  min-height: 36px;
+  padding: 0 10px;
+}
+
 .tool-box h3 {
   margin: 0;
   font-size: 0.98rem;
@@ -1025,6 +1037,16 @@ nav .nav-button.active {
 .status-badge.stopped {
   background: #f0f0f0;
   color: #555555;
+}
+
+.status-badge.preparing {
+  background: #fff4df;
+  color: #95610d;
+}
+
+.status-badge.shipped {
+  background: #eef4ff;
+  color: #1f4e9d;
 }
 
 @media (max-width: 1080px) {

@@ -104,7 +104,7 @@ model EcommerceOrder {
   subtotal        Decimal
   vatAmount       Decimal
   total           Decimal
-  status          String   @default("PENDING_DELIVERY")
+  status          String   @default("PREPARING")
   source          String   @default("AGENT_BUY")
   createdAt       DateTime @default(now())
   deliveredAt     DateTime?

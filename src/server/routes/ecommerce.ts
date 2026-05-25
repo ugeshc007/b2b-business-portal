@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { requireAuth } from "../middleware";
-import { createEcommerceOrder, markEcommerceOrderDelivered } from "../services/ecommerce";
+import { createEcommerceOrder, updateEcommerceOrderStatus } from "../services/ecommerce";
 
 export const ecommerceRouter = Router();
 ecommerceRouter.use(requireAuth);
@@ -20,9 +20,12 @@ ecommerceRouter.post("/orders", async (req, res, next) => {
   }
 });
 
-ecommerceRouter.patch("/orders/:id/deliver", async (req, res, next) => {
+ecommerceRouter.patch("/orders/:id/status", async (req, res, next) => {
   try {
-    res.json(await markEcommerceOrderDelivered(req.params.id));
+    const input = z.object({
+      status: z.enum(["PREPARING", "SHIPPED", "DELIVERED"]),
+    }).parse(req.body);
+    res.json(await updateEcommerceOrderStatus(req.params.id, input.status));
   } catch (error) {
     next(error);
   }

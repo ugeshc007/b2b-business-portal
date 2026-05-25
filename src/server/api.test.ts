@@ -243,7 +243,7 @@ describe("api", () => {
     expect(await prisma.item.count()).toBe(1);
   });
 
-  it("creates an ecommerce buy order and marks it delivered", async () => {
+  it("creates an ecommerce buy order and tracks recharge delivery statuses", async () => {
     await createUser("admin@example.com", "ChangeMe123!", "Admin");
     const buyer = await createCompany({
       name: "Ecom Buyer",
@@ -280,7 +280,7 @@ describe("api", () => {
       })
       .expect(201);
 
-    expect(order.body.status).toBe("PENDING_DELIVERY");
+    expect(order.body.status).toBe("PREPARING");
     expect(order.body.total).toBe("105");
 
     const stock = await prisma.stock.findUniqueOrThrow({
@@ -288,9 +288,18 @@ describe("api", () => {
     });
     expect(stock.quantity).toBe(3);
 
-    const delivered = await request(app)
-      .patch(`/api/ecommerce/orders/${order.body.id}/deliver`)
+    const shipped = await request(app)
+      .patch(`/api/ecommerce/orders/${order.body.id}/status`)
       .set("Authorization", `Bearer ${login.body.token}`)
+      .send({ status: "SHIPPED" })
+      .expect(200);
+
+    expect(shipped.body.status).toBe("SHIPPED");
+
+    const delivered = await request(app)
+      .patch(`/api/ecommerce/orders/${order.body.id}/status`)
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .send({ status: "DELIVERED" })
       .expect(200);
 
     expect(delivered.body.status).toBe("DELIVERED");

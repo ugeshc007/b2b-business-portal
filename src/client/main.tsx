@@ -1117,14 +1117,17 @@ function App() {
     }
   }
 
-  async function markEcommerceDelivered(orderId: string) {
+  async function updateEcommerceStatus(orderId: string, status: "PREPARING" | "SHIPPED" | "DELIVERED") {
     setLoading(true);
     try {
-      await request(`/api/ecommerce/orders/${orderId}/deliver`, { method: "PATCH" });
-      setMessage("Delivery marked complete.");
+      await request(`/api/ecommerce/orders/${orderId}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      });
+      setMessage(`Recharge order marked ${status.toLowerCase().replace("_", " ")}.`);
       await loadSummary();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not update delivery");
+      setMessage(error instanceof Error ? error.message : "Could not update recharge status");
     } finally {
       setLoading(false);
     }
@@ -2104,7 +2107,7 @@ function App() {
             </div>
 
             <div className="table-section-title">
-              <strong>Backend Delivery Tracking</strong>
+              <strong>Recharge And Purchase History</strong>
               <span>{scopedEcommerceOrders.length} orders</span>
             </div>
             <div className="table">
@@ -2115,12 +2118,20 @@ function App() {
                   <span>{order.buyerCompany.name} buying from {order.sellerCompany.name}</span>
                   <span>{money(order.total)}</span>
                   <span className={`status-badge ${order.status.toLowerCase()}`}>{order.status}</span>
-                  <button type="button" onClick={() => markEcommerceDelivered(order.id)} disabled={loading || order.status === "DELIVERED"}>
-                    <Truck size={16} /> {order.status === "DELIVERED" ? "Delivered" : "Deliver"}
-                  </button>
+                  <div className="ecom-status-actions">
+                    <button type="button" onClick={() => updateEcommerceStatus(order.id, "PREPARING")} disabled={loading || order.status === "PREPARING"}>
+                      Preparing
+                    </button>
+                    <button type="button" onClick={() => updateEcommerceStatus(order.id, "SHIPPED")} disabled={loading || order.status === "SHIPPED"}>
+                      <Truck size={16} /> Shipped
+                    </button>
+                    <button type="button" onClick={() => updateEcommerceStatus(order.id, "DELIVERED")} disabled={loading || order.status === "DELIVERED"}>
+                      Delivered
+                    </button>
+                  </div>
                 </div>
               ))}
-              {!scopedEcommerceOrders.length && <div className="empty-state">No ecommerce buy orders yet.</div>}
+              {!scopedEcommerceOrders.length && <div className="empty-state">No recharge or purchase history yet.</div>}
             </div>
           </Panel>
         )}
