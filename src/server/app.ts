@@ -11,6 +11,7 @@ import { workflowRouter } from "./routes/workflow";
 import { dashboardRouter } from "./routes/dashboard";
 import { invoiceRouter } from "./routes/invoices";
 import { emailIntegrationRouter } from "./routes/emailIntegrations";
+import { ecommerceRouter } from "./routes/ecommerce";
 import { prisma } from "./db";
 import { env } from "./env";
 
@@ -50,6 +51,7 @@ export function createApp() {
   app.use("/api/dashboard", dashboardRouter);
   app.use("/api/invoices", invoiceRouter);
   app.use("/api/email-integrations", emailIntegrationRouter);
+  app.use("/api/ecommerce", ecommerceRouter);
 
   const distPath = path.resolve(process.cwd(), "dist");
   app.use(express.static(distPath));

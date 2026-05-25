@@ -8,7 +8,7 @@ dashboardRouter.use(requireAuth);
 
 dashboardRouter.get("/summary", async (_req, res, next) => {
   try {
-    const [companies, items, targets, requirements, quotations, orders, invoices, emails, stock, emailIntegrations, turnoverTargets, agentAuditLogs] = await Promise.all([
+    const [companies, items, targets, requirements, quotations, orders, invoices, emails, stock, emailIntegrations, turnoverTargets, agentAuditLogs, ecommerceOrders] = await Promise.all([
       prisma.company.findMany(),
       prisma.item.findMany(),
       prisma.monthlyTarget.findMany({
@@ -29,6 +29,11 @@ dashboardRouter.get("/summary", async (_req, res, next) => {
       prisma.emailIntegration.findMany({ include: { company: true }, orderBy: { createdAt: "asc" } }),
       prisma.turnoverTarget.findMany({ include: { company: true }, orderBy: { createdAt: "desc" } }),
       prisma.agentAuditLog.findMany({ orderBy: { createdAt: "desc" }, take: 100 }),
+      prisma.ecommerceOrder.findMany({
+        include: { buyerCompany: true, sellerCompany: true, item: true },
+        orderBy: { createdAt: "desc" },
+        take: 100,
+      }),
     ]);
 
     const invoiceTotal = invoices.reduce((sum, invoice) => sum.plus(invoice.total), new Prisma.Decimal(0));
@@ -85,6 +90,7 @@ dashboardRouter.get("/summary", async (_req, res, next) => {
         quotations: quotations.length,
         orders: orders.length,
         invoices: invoices.length,
+        ecommerceOrders: ecommerceOrders.length,
       },
       overview: {
         invoiceTotal,
@@ -125,6 +131,7 @@ dashboardRouter.get("/summary", async (_req, res, next) => {
       emailIntegrations,
       turnoverTargets,
       agentAuditLogs,
+      ecommerceOrders,
     });
   } catch (error) {
     next(error);

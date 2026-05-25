@@ -15,6 +15,7 @@ beforeEach(async () => {
   await prisma.emailLog.deleteMany();
   await prisma.agentDecision.deleteMany();
   await prisma.emailIntegration.deleteMany();
+  await prisma.ecommerceOrder.deleteMany();
   await prisma.invoiceLine.deleteMany();
   await prisma.invoice.deleteMany();
   await prisma.purchaseOrderLine.deleteMany();
@@ -35,6 +36,7 @@ afterAll(async () => {
   await prisma.appSetting.deleteMany();
   await prisma.agentAuditLog.deleteMany();
   await prisma.emailLog.deleteMany();
+  await prisma.ecommerceOrder.deleteMany();
   await prisma.agentDecision.deleteMany();
   await prisma.emailIntegration.deleteMany();
   await prisma.invoiceLine.deleteMany();
@@ -239,6 +241,65 @@ describe("api", () => {
     expect(await prisma.stock.count()).toBe(0);
     expect(await prisma.emailIntegration.count()).toBe(0);
     expect(await prisma.item.count()).toBe(1);
+  });
+
+  it("creates an ecommerce buy order and marks it delivered", async () => {
+    await createUser("admin@example.com", "ChangeMe123!", "Admin");
+    const buyer = await createCompany({
+      name: "Ecom Buyer",
+      legalName: "Ecom Buyer LLC",
+      location: "Dubai",
+      email: "ecom-buyer@example.com",
+    });
+    const seller = await createCompany({
+      name: "Ecom Seller",
+      legalName: "Ecom Seller LLC",
+      location: "Sharjah",
+      email: "ecom-seller@example.com",
+    });
+    const item = await createItem({
+      sku: "ECOM-GC-50",
+      name: "Ecom Gift Card",
+      unit: "code",
+      expectedPrice: 50,
+    });
+    await setStock(seller.id, item.id, 5);
+    const login = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "admin@example.com", password: "ChangeMe123!" })
+      .expect(200);
+
+    const order = await request(app)
+      .post("/api/ecommerce/orders")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .send({
+        buyerCompanyId: buyer.id,
+        sellerCompanyId: seller.id,
+        itemId: item.id,
+        quantity: 2,
+      })
+      .expect(201);
+
+    expect(order.body.status).toBe("PENDING_DELIVERY");
+    expect(order.body.total).toBe("105");
+
+    const stock = await prisma.stock.findUniqueOrThrow({
+      where: { companyId_itemId: { companyId: seller.id, itemId: item.id } },
+    });
+    expect(stock.quantity).toBe(3);
+
+    const delivered = await request(app)
+      .patch(`/api/ecommerce/orders/${order.body.id}/deliver`)
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .expect(200);
+
+    expect(delivered.body.status).toBe("DELIVERED");
+
+    const summary = await request(app)
+      .get("/api/dashboard/summary")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .expect(200);
+    expect(summary.body.ecommerceOrders[0].id).toBe(order.body.id);
   });
 
   it("blocks deleting a company with transaction history", async () => {

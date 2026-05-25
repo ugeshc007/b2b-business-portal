@@ -68,6 +68,8 @@ model Company {
   sellerInvoices Invoice[]       @relation("SellerInvoices")
   emailIntegration EmailIntegration?
   turnoverTargets TurnoverTarget[]
+  ecommerceBuyerOrders EcommerceOrder[] @relation("EcommerceBuyerOrders")
+  ecommerceSellerOrders EcommerceOrder[] @relation("EcommerceSellerOrders")
 }
 
 model Item {
@@ -88,6 +90,28 @@ model Item {
   quotationLines   QuotationLine[]
   orderLines       PurchaseOrderLine[]
   invoiceLines     InvoiceLine[]
+  ecommerceOrders  EcommerceOrder[]
+}
+
+model EcommerceOrder {
+  id              String   @id @default(cuid())
+  buyerCompanyId  String
+  sellerCompanyId String
+  itemId          String
+  quantity        Int
+  unitPrice       Decimal
+  vatRate         Decimal
+  subtotal        Decimal
+  vatAmount       Decimal
+  total           Decimal
+  status          String   @default("PENDING_DELIVERY")
+  source          String   @default("AGENT_BUY")
+  createdAt       DateTime @default(now())
+  deliveredAt     DateTime?
+
+  buyerCompany  Company @relation("EcommerceBuyerOrders", fields: [buyerCompanyId], references: [id])
+  sellerCompany Company @relation("EcommerceSellerOrders", fields: [sellerCompanyId], references: [id])
+  item          Item    @relation(fields: [itemId], references: [id])
 }
 
 model Stock {

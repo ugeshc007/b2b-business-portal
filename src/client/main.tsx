@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Building2, ChevronDown, ChevronUp, Download, Edit, FileText, LogIn, Mail, Package, Play, RefreshCcw, Save, Send, Settings, ShieldCheck, Square, Trash2, X } from "lucide-react";
+import { Building2, ChevronDown, ChevronUp, Download, Edit, FileText, LogIn, Mail, Package, Play, RefreshCcw, Save, Send, Settings, ShieldCheck, ShoppingCart, Square, Trash2, Truck, X } from "lucide-react";
 import "./styles.css";
 
 const apiUrl = import.meta.env.VITE_API_URL ?? window.location.origin;
@@ -54,6 +54,19 @@ type InvoiceDetail = Invoice & {
   lines: Array<{ id: string; quantity: number; unitPrice: string; vatRate: string; lineTotal: string; item: Item }>;
 };
 type EmailLog = { id: string; fromEmail: string; toEmail: string; subject: string; status: string };
+type EcommerceOrder = {
+  id: string;
+  quantity: number;
+  unitPrice: string;
+  vatAmount: string;
+  total: string;
+  status: string;
+  createdAt: string;
+  deliveredAt?: string;
+  buyerCompany: Company;
+  sellerCompany: Company;
+  item: Item;
+};
 type AgentAuditLog = { id: string; targetId?: string; step: string; status: string; message: string; metadata?: string; createdAt: string };
 type EmailIntegration = {
   id: string;
@@ -117,9 +130,10 @@ type Summary = {
   agentAuditLogs: AgentAuditLog[];
   emailIntegrations: EmailIntegration[];
   turnoverTargets: TurnoverTarget[];
+  ecommerceOrders: EcommerceOrder[];
 };
 
-type View = "overview" | "stock" | "workflow" | "invoices" | "settings";
+type View = "overview" | "stock" | "ecommerce" | "workflow" | "invoices" | "settings";
 
 function money(value: string | number) {
   return `AED ${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -1074,6 +1088,48 @@ function App() {
     }
   }
 
+  async function buyEcommerceProduct(stock: Stock) {
+    const buyerCompanyId = companyScopeId !== "ALL"
+      ? companyScopeId
+      : activeCompanies.find((company) => company.id !== stock.company.id)?.id ?? "";
+    if (!buyerCompanyId || buyerCompanyId === stock.company.id) {
+      setMessage("Select a buyer company different from the product seller before buying.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await request("/api/ecommerce/orders", {
+        method: "POST",
+        body: JSON.stringify({
+          buyerCompanyId,
+          sellerCompanyId: stock.company.id,
+          itemId: stock.item.id,
+          quantity: 1,
+        }),
+      });
+      setMessage(`${stock.item.sku} bought and added to delivery tracking.`);
+      await loadSummary();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not buy product");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function markEcommerceDelivered(orderId: string) {
+    setLoading(true);
+    try {
+      await request(`/api/ecommerce/orders/${orderId}/deliver`, { method: "PATCH" });
+      setMessage("Delivery marked complete.");
+      await loadSummary();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not update delivery");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function createStockItem(event: React.FormEvent) {
     event.preventDefault();
     const expectedPrice = Number(newItemPrice);
@@ -1330,6 +1386,9 @@ function App() {
   const scopedStock = companyScopeId === "ALL"
     ? summary?.stock ?? []
     : summary?.stock.filter((stock) => stock.company.id === companyScopeId) ?? [];
+  const ecommerceProductRows = (summary?.stock ?? [])
+    .filter((stock) => stock.quantity > 0)
+    .filter((stock) => companyScopeId === "ALL" || stock.company.id !== companyScopeId);
   const scopedTargets = companyScopeId === "ALL"
     ? summary?.targets ?? []
     : summary?.targets.filter((target) => target.buyerCompany.id === companyScopeId || target.sellerCompany.id === companyScopeId) ?? [];
@@ -1354,6 +1413,9 @@ function App() {
   const scopedTurnoverTargets = companyScopeId === "ALL"
     ? summary?.turnoverTargets ?? []
     : summary?.turnoverTargets.filter((target) => target.companyId === companyScopeId) ?? [];
+  const scopedEcommerceOrders = companyScopeId === "ALL"
+    ? summary?.ecommerceOrders ?? []
+    : summary?.ecommerceOrders.filter((order) => order.buyerCompany.id === companyScopeId || order.sellerCompany.id === companyScopeId) ?? [];
   const activeCompanies = (summary?.companies ?? []).filter((company) => company.active !== false);
   const activePortalLinks: Array<{ href: string; label: string }> = [];
   const fallbackPortalLinks = [
@@ -1434,6 +1496,7 @@ function App() {
         <nav>
           <NavButton icon={<Building2 size={18} />} label="Overview" view="overview" activeView={activeView} onSelect={setActiveView} />
           <NavButton icon={<Package size={18} />} label="Stock" view="stock" activeView={activeView} onSelect={setActiveView} />
+          <NavButton icon={<ShoppingCart size={18} />} label="Ecom Products" view="ecommerce" activeView={activeView} onSelect={setActiveView} />
           <NavButton icon={<Play size={18} />} label="Workflow" view="workflow" activeView={activeView} onSelect={setActiveView} />
           <NavButton icon={<FileText size={18} />} label="Invoices" view="invoices" activeView={activeView} onSelect={setActiveView} />
           <NavButton icon={<Settings size={18} />} label="Settings" view="settings" activeView={activeView} onSelect={setActiveView} />
@@ -2012,6 +2075,52 @@ function App() {
                   <span>{stock.quantity} {stock.item.unit}</span>
                 </div>
               ))}
+            </div>
+          </Panel>
+        )}
+
+        {activeView === "ecommerce" && (
+          <Panel title="Ecom Products">
+            <div className="ecom-product-grid">
+              {ecommerceProductRows.map((stock) => (
+                <article className="ecom-product-card" key={stock.id}>
+                  <div>
+                    <strong>{stock.item.sku}</strong>
+                    <span>{stock.item.name}</span>
+                  </div>
+                  <div className="ecom-product-meta">
+                    <span>Seller: {stock.company.name}</span>
+                    <span>Available: {stock.quantity} {stock.item.unit}</span>
+                    <span>Price: {money(stock.item.expectedPrice)}</span>
+                  </div>
+                  <button type="button" onClick={() => buyEcommerceProduct(stock)} disabled={loading}>
+                    <ShoppingCart size={17} /> Buy
+                  </button>
+                </article>
+              ))}
+              {!ecommerceProductRows.length && (
+                <div className="empty-state">No ecommerce products available from other company stock.</div>
+              )}
+            </div>
+
+            <div className="table-section-title">
+              <strong>Backend Delivery Tracking</strong>
+              <span>{scopedEcommerceOrders.length} orders</span>
+            </div>
+            <div className="table">
+              {scopedEcommerceOrders.map((order) => (
+                <div className="row ecom-order-row" key={order.id}>
+                  <span>{new Date(order.createdAt).toLocaleString()}</span>
+                  <span>{order.item.sku} x {order.quantity}</span>
+                  <span>{order.buyerCompany.name} buying from {order.sellerCompany.name}</span>
+                  <span>{money(order.total)}</span>
+                  <span className={`status-badge ${order.status.toLowerCase()}`}>{order.status}</span>
+                  <button type="button" onClick={() => markEcommerceDelivered(order.id)} disabled={loading || order.status === "DELIVERED"}>
+                    <Truck size={16} /> {order.status === "DELIVERED" ? "Delivered" : "Deliver"}
+                  </button>
+                </div>
+              ))}
+              {!scopedEcommerceOrders.length && <div className="empty-state">No ecommerce buy orders yet.</div>}
             </div>
           </Panel>
         )}
