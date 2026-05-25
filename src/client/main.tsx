@@ -1117,17 +1117,14 @@ function App() {
     }
   }
 
-  async function updateEcommerceStatus(orderId: string, status: "PREPARING" | "SHIPPED" | "DELIVERED") {
+  async function markEcommerceDelivered(orderId: string) {
     setLoading(true);
     try {
-      await request(`/api/ecommerce/orders/${orderId}/status`, {
-        method: "PATCH",
-        body: JSON.stringify({ status }),
-      });
-      setMessage(`Recharge order marked ${status.toLowerCase().replace("_", " ")}.`);
+      await request(`/api/ecommerce/orders/${orderId}/deliver`, { method: "PATCH" });
+      setMessage("Delivery marked complete.");
       await loadSummary();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not update recharge status");
+      setMessage(error instanceof Error ? error.message : "Could not update delivery");
     } finally {
       setLoading(false);
     }
@@ -2084,45 +2081,6 @@ function App() {
 
         {activeView === "ecommerce" && (
           <Panel title="Ecom Products">
-            <section className="ecom-promo-shell">
-              <div className="ecom-hero-promo">
-                <small>RECHARGE SERVICE</small>
-                <strong>ULTRA FAST RECHARGE</strong>
-                <span>Mobile top-up, game cards, gift cards, and Salik vouchers</span>
-                <b>GAMES</b>
-              </div>
-              <div className="ecom-category-grid">
-                <div className="ecom-category-card mobile">
-                  <small>MOBILE</small>
-                  <strong>Telecom Recharge</strong>
-                  <span>Etisalat and du top-up vouchers</span>
-                  <b>TEL</b>
-                </div>
-                <div className="ecom-category-card game">
-                  <small>GAME</small>
-                  <strong>Game Cards</strong>
-                  <span>PUBG, Free Fire, and gaming wallet cards</span>
-                  <b>UC</b>
-                </div>
-                <div className="ecom-category-card gift">
-                  <small>GIFT</small>
-                  <strong>Gift Cards</strong>
-                  <span>Store cards and digital vouchers</span>
-                  <b>GIFT</b>
-                </div>
-                <div className="ecom-category-card road">
-                  <small>ROAD</small>
-                  <strong>Road Voucher</strong>
-                  <span>Salik and road balance vouchers</span>
-                  <b>ROAD</b>
-                </div>
-              </div>
-              <div className="ecom-special-promo">
-                <small>SPECIAL PROMOTION</small>
-                <strong>Special Products</strong>
-                <span>Ecommerce offers and promotional vouchers</span>
-              </div>
-            </section>
             <div className="ecom-product-grid">
               {ecommerceProductRows.map((stock) => (
                 <article className="ecom-product-card" key={stock.id}>
@@ -2146,7 +2104,7 @@ function App() {
             </div>
 
             <div className="table-section-title">
-              <strong>Recharge And Purchase History</strong>
+              <strong>Backend Delivery Tracking</strong>
               <span>{scopedEcommerceOrders.length} orders</span>
             </div>
             <div className="table">
@@ -2157,20 +2115,12 @@ function App() {
                   <span>{order.buyerCompany.name} buying from {order.sellerCompany.name}</span>
                   <span>{money(order.total)}</span>
                   <span className={`status-badge ${order.status.toLowerCase()}`}>{order.status}</span>
-                  <div className="ecom-status-actions">
-                    <button type="button" onClick={() => updateEcommerceStatus(order.id, "PREPARING")} disabled={loading || order.status === "PREPARING"}>
-                      Preparing
-                    </button>
-                    <button type="button" onClick={() => updateEcommerceStatus(order.id, "SHIPPED")} disabled={loading || order.status === "SHIPPED"}>
-                      <Truck size={16} /> Shipped
-                    </button>
-                    <button type="button" onClick={() => updateEcommerceStatus(order.id, "DELIVERED")} disabled={loading || order.status === "DELIVERED"}>
-                      Delivered
-                    </button>
-                  </div>
+                  <button type="button" onClick={() => markEcommerceDelivered(order.id)} disabled={loading || order.status === "DELIVERED"}>
+                    <Truck size={16} /> {order.status === "DELIVERED" ? "Delivered" : "Deliver"}
+                  </button>
                 </div>
               ))}
-              {!scopedEcommerceOrders.length && <div className="empty-state">No recharge or purchase history yet.</div>}
+              {!scopedEcommerceOrders.length && <div className="empty-state">No ecommerce buy orders yet.</div>}
             </div>
           </Panel>
         )}

@@ -57,10 +57,10 @@ export async function createEcommerceOrder(input: {
   });
 }
 
-export async function updateEcommerceOrderStatus(orderId: string, status: "PREPARING" | "SHIPPED" | "DELIVERED") {
+export async function markEcommerceOrderDelivered(orderId: string) {
   const order = await prisma.ecommerceOrder.findUnique({ where: { id: orderId } });
   if (!order) throw new Error("Ecommerce order not found");
-  if (order.status === status) {
+  if (order.status === "DELIVERED") {
     return prisma.ecommerceOrder.findUniqueOrThrow({
       where: { id: orderId },
       include: { buyerCompany: true, sellerCompany: true, item: true },
@@ -69,10 +69,7 @@ export async function updateEcommerceOrderStatus(orderId: string, status: "PREPA
 
   return prisma.ecommerceOrder.update({
     where: { id: orderId },
-    data: {
-      status,
-      deliveredAt: status === "DELIVERED" ? new Date() : null,
-    },
+    data: { status: "DELIVERED", deliveredAt: new Date() },
     include: { buyerCompany: true, sellerCompany: true, item: true },
   });
 }
