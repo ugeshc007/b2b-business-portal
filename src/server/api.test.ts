@@ -202,6 +202,36 @@ describe("api", () => {
     expect(summary.body.companies[0].vatEnabled).toBe(false);
   });
 
+  it("uploads a company logo and exposes the preview path", async () => {
+    await createUser("admin@example.com", "ChangeMe123!", "Admin");
+    const company = await createCompany({
+      name: "Logo Company",
+      legalName: "Logo Company LLC",
+      location: "Dubai",
+      email: "logo-company@example.com",
+    });
+    const login = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "admin@example.com", password: "ChangeMe123!" })
+      .expect(200);
+
+    const uploaded = await request(app)
+      .put(`/api/catalog/companies/${company.id}/logo`)
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .set("Content-Type", "image/png")
+      .send(Buffer.from("fake-png-logo"))
+      .expect(200);
+
+    expect(uploaded.body.logoPath).toMatch(/^\/uploads\/company-logos\/.+\.png$/);
+
+    const summary = await request(app)
+      .get("/api/dashboard/summary")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .expect(200);
+
+    expect(summary.body.companies[0].logoPath).toBe(uploaded.body.logoPath);
+  });
+
   it("deletes a clean company and removes setup data", async () => {
     await createUser("admin@example.com", "ChangeMe123!", "Admin");
     const company = await createCompany({

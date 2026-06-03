@@ -23,6 +23,7 @@ type Company = {
   bankIban?: string;
   bankCid?: string;
   bankBranch?: string;
+  logoPath?: string;
 };
 type Item = { id: string; sku: string; name: string; unit: string; expectedPrice: string; maxPrice?: string };
 type Stock = { id: string; quantity: number; company: Company; item: Item };
@@ -150,6 +151,12 @@ function monthStartInputValue(date = new Date()) {
 
 function monthEndInputValue(date = new Date()) {
   return dateInputValue(new Date(date.getFullYear(), date.getMonth() + 1, 0));
+}
+
+function mediaUrl(path?: string | null) {
+  if (!path) return "";
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${apiUrl}${path}`;
 }
 
 function parseAgentInstructionDraft(instruction: string) {
@@ -539,6 +546,33 @@ function App() {
       await loadSummary();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not create company");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function uploadCompanyLogo(company: Company, file: File | null) {
+    if (!file) return;
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+      setMessage("Company logo must be PNG, JPG, or WEBP.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const response = await fetch(`${apiUrl}/api/catalog/companies/${company.id}/logo`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": file.type,
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: file,
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not upload company logo");
+      setMessage(`${company.name} logo uploaded.`);
+      await loadSummary();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not upload company logo");
     } finally {
       setLoading(false);
     }
@@ -1767,9 +1801,14 @@ function App() {
                   return (
                     <form className="company-settings-card" key={company.id} onSubmit={(event) => saveCompanyCard(event, company)}>
                       <div className="company-card-head">
-                        <div>
-                          <strong>{company.name}</strong>
-                          <span>{company.legalName}</span>
+                        <div className="company-card-title">
+                          <div className="company-logo-preview">
+                            {company.logoPath ? <img src={mediaUrl(company.logoPath)} alt={`${company.name} logo`} /> : <Building2 size={24} />}
+                          </div>
+                          <div>
+                            <strong>{company.name}</strong>
+                            <span>{company.legalName}</span>
+                          </div>
                         </div>
                         <div className="company-card-summary-actions">
                           <span className={`status-badge ${company.active === false ? "stopped" : "completed"}`}>{company.active === false ? "Inactive" : "Active"}</span>
@@ -1782,6 +1821,18 @@ function App() {
                       {isExpanded && (
                         <>
                           <div className="company-card-fields">
+                            <label className="company-logo-upload">
+                              Company Logo
+                              <span>
+                                <input
+                                  type="file"
+                                  accept="image/png,image/jpeg,image/webp"
+                                  onChange={(event) => uploadCompanyLogo(company, event.currentTarget.files?.[0] ?? null)}
+                                  disabled={loading}
+                                />
+                                <span className="muted-text">PNG, JPG, or WEBP. Used in PO and invoice PDFs.</span>
+                              </span>
+                            </label>
                             <label>
                               Display Name
                               <input name="name" defaultValue={company.name} />

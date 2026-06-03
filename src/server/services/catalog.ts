@@ -1,4 +1,6 @@
 import { Prisma } from "@prisma/client";
+import fs from "node:fs";
+import path from "node:path";
 import { prisma } from "../db";
 
 export async function createCompany(data: {
@@ -9,6 +11,7 @@ export async function createCompany(data: {
   email: string;
   active?: boolean;
   vatEnabled?: boolean;
+  logoPath?: string;
   bankName?: string;
   bankBeneficiaryName?: string;
   bankAccountNumber?: string;
@@ -29,6 +32,7 @@ export async function updateCompany(companyId: string, data: {
   email: string;
   active?: boolean;
   vatEnabled?: boolean;
+  logoPath?: string;
   bankName?: string;
   bankBeneficiaryName?: string;
   bankAccountNumber?: string;
@@ -49,6 +53,7 @@ export async function updateCompany(companyId: string, data: {
       email: data.email,
       active: data.active,
       vatEnabled: data.vatEnabled,
+      logoPath: data.logoPath,
       bankName: data.bankName || null,
       bankBeneficiaryName: data.bankBeneficiaryName || null,
       bankAccountNumber: data.bankAccountNumber || null,
@@ -56,6 +61,38 @@ export async function updateCompany(companyId: string, data: {
       bankCid: data.bankCid || null,
       bankBranch: data.bankBranch || null,
     },
+  });
+}
+
+export async function saveCompanyLogo(companyId: string, input: { mimeType: string; buffer: Buffer }) {
+  const company = await prisma.company.findUnique({ where: { id: companyId } });
+  if (!company) throw new Error("Company not found");
+  if (!input.buffer.length) throw new Error("Logo file is required");
+
+  const extensionByMime: Record<string, string> = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/webp": "webp",
+  };
+  const extension = extensionByMime[input.mimeType];
+  if (!extension) throw new Error("Logo must be PNG, JPG, or WEBP");
+
+  const storageDir = path.resolve(process.cwd(), "storage", "company-logos");
+  fs.mkdirSync(storageDir, { recursive: true });
+
+  const safeCompanyId = companyId.replace(/[^a-zA-Z0-9_-]/g, "");
+  const fileName = `${safeCompanyId}-${Date.now()}.${extension}`;
+  const filePath = path.join(storageDir, fileName);
+  fs.writeFileSync(filePath, input.buffer);
+
+  if (company.logoPath?.startsWith("/uploads/company-logos/")) {
+    const previousPath = path.join(storageDir, path.basename(company.logoPath));
+    if (previousPath !== filePath && fs.existsSync(previousPath)) fs.unlinkSync(previousPath);
+  }
+
+  return prisma.company.update({
+    where: { id: companyId },
+    data: { logoPath: `/uploads/company-logos/${fileName}` },
   });
 }
 

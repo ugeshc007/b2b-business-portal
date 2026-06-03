@@ -53,8 +53,8 @@ async function writePurchaseOrderPdf(order: {
   subtotal: { toFixed(decimalPlaces: number): string; toString(): string };
   vatAmount: { toFixed(decimalPlaces: number): string; toString(): string };
   total: { toFixed(decimalPlaces: number): string; toString(): string };
-  buyerCompany: { name?: string | null; legalName: string; location: string; email: string; trn: string | null };
-  sellerCompany: { name?: string | null; legalName: string; location: string; email: string; trn: string | null };
+  buyerCompany: { name?: string | null; legalName: string; location: string; email: string; trn: string | null; logoPath?: string | null };
+  sellerCompany: { name?: string | null; legalName: string; location: string; email: string; trn: string | null; logoPath?: string | null };
   lines: Array<{
     quantity: number;
     unitPrice: { toFixed(decimalPlaces: number): string; toString(): string };
@@ -164,8 +164,8 @@ function drawBuy2dayLpoPdf(doc: PDFKit.PDFDocument, order: {
   subtotal: { toString(): string };
   vatAmount: { toString(): string };
   total: { toString(): string };
-  buyerCompany: { legalName: string; location: string; email: string; trn: string | null };
-  sellerCompany: { legalName: string; location: string; email: string; trn: string | null };
+  buyerCompany: { legalName: string; location: string; email: string; trn: string | null; logoPath?: string | null };
+  sellerCompany: { legalName: string; location: string; email: string; trn: string | null; logoPath?: string | null };
   lines: Array<{
     quantity: number;
     unitPrice: { toString(): string };

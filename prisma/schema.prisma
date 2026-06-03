@@ -47,6 +47,7 @@ model Company {
   email     String      @unique
   active    Boolean     @default(true)
   vatEnabled Boolean    @default(true)
+  logoPath              String?
   bankName              String?
   bankBeneficiaryName   String?
   bankAccountNumber     String?

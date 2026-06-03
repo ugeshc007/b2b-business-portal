@@ -1,7 +1,7 @@
-import { Router } from "express";
+import express, { Router } from "express";
 import { z } from "zod";
 import { requireAuth } from "../middleware";
-import { bulkUpsertStock, createCompany, createItem, deleteCompany, listCatalog, parsePurchaseInvoiceText, parseStockCsv, setStock, updateCompany } from "../services/catalog";
+import { bulkUpsertStock, createCompany, createItem, deleteCompany, listCatalog, parsePurchaseInvoiceText, parseStockCsv, saveCompanyLogo, setStock, updateCompany } from "../services/catalog";
 
 export const catalogRouter = Router();
 catalogRouter.use(requireAuth);
@@ -24,6 +24,7 @@ catalogRouter.post("/companies", async (req, res, next) => {
       email: z.string().email(),
       active: z.boolean().optional(),
       vatEnabled: z.boolean().optional(),
+      logoPath: z.string().optional(),
       bankName: z.string().optional(),
       bankBeneficiaryName: z.string().optional(),
       bankAccountNumber: z.string().optional(),
@@ -47,6 +48,7 @@ catalogRouter.patch("/companies/:id", async (req, res, next) => {
       email: z.string().email(),
       active: z.boolean().optional(),
       vatEnabled: z.boolean().optional(),
+      logoPath: z.string().optional().or(z.literal("")),
       bankName: z.string().optional().or(z.literal("")),
       bankBeneficiaryName: z.string().optional().or(z.literal("")),
       bankAccountNumber: z.string().optional().or(z.literal("")),
@@ -57,6 +59,7 @@ catalogRouter.patch("/companies/:id", async (req, res, next) => {
     res.json(await updateCompany(req.params.id, {
       ...input,
       trn: input.trn || undefined,
+      logoPath: input.logoPath || undefined,
       bankName: input.bankName || undefined,
       bankBeneficiaryName: input.bankBeneficiaryName || undefined,
       bankAccountNumber: input.bankAccountNumber || undefined,
@@ -68,6 +71,20 @@ catalogRouter.patch("/companies/:id", async (req, res, next) => {
     next(error);
   }
 });
+
+catalogRouter.put(
+  "/companies/:id/logo",
+  express.raw({ type: ["image/png", "image/jpeg", "image/webp"], limit: "2mb" }),
+  async (req, res, next) => {
+    try {
+      const contentType = String(req.headers["content-type"] ?? "").split(";")[0].trim();
+      const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from([]);
+      res.json(await saveCompanyLogo(req.params.id, { mimeType: contentType, buffer }));
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 catalogRouter.delete("/companies/:id", async (req, res, next) => {
   try {

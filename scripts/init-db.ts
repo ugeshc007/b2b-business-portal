@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS Company (
   email TEXT NOT NULL UNIQUE,
   active BOOLEAN NOT NULL DEFAULT true,
   vatEnabled BOOLEAN NOT NULL DEFAULT true,
+  logoPath TEXT,
   bankName TEXT,
   bankBeneficiaryName TEXT,
   bankAccountNumber TEXT,
@@ -319,6 +320,7 @@ if (!companyColumns.some((column) => column.name === "vatEnabled")) {
   db.exec("ALTER TABLE Company ADD COLUMN vatEnabled BOOLEAN NOT NULL DEFAULT true;");
 }
 const companyOptionalTextColumns = [
+  "logoPath",
   "bankName",
   "bankBeneficiaryName",
   "bankAccountNumber",

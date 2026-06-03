@@ -53,6 +53,8 @@ export function createApp() {
   app.use("/api/email-integrations", emailIntegrationRouter);
   app.use("/api/ecommerce", ecommerceRouter);
 
+  app.use("/uploads/company-logos", express.static(path.resolve(process.cwd(), "storage", "company-logos")));
+
   const distPath = path.resolve(process.cwd(), "dist");
   app.use(express.static(distPath));
   app.get(/^\/(?!api).*/, (_req, res) => {

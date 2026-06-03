@@ -441,7 +441,7 @@ nav .nav-button.active {
   border-bottom: 1px solid #edf1ee;
 }
 
-.company-card-head div {
+.company-card-head > div {
   display: grid;
   gap: 4px;
 }
@@ -456,6 +456,48 @@ nav .nav-button.active {
   gap: 10px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.company-card-title {
+  display: flex !important;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.company-card-title > div:last-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.company-logo-preview {
+  width: 64px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid #d8dfda;
+  border-radius: 6px;
+  background: #f7faf8;
+  overflow: hidden;
+  color: #2c4f3f;
+}
+
+.company-logo-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 5px;
+}
+
+.company-logo-upload {
+  grid-column: span 2;
+}
+
+.company-logo-upload span {
+  display: grid;
+  gap: 6px;
 }
 
 .company-active-toggle {

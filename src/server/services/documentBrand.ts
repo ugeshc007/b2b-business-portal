@@ -5,6 +5,7 @@ type BrandCompany = {
   name?: string | null;
   legalName: string;
   email: string;
+  logoPath?: string | null;
 };
 
 type DocumentBrand = {
@@ -15,6 +16,7 @@ type DocumentBrand = {
   text: string;
   pattern: "diagonal" | "dots";
   logoFile: string;
+  customLogoPath?: string | null;
 };
 
 export function getDocumentBrand(company: BrandCompany): DocumentBrand {
@@ -28,6 +30,7 @@ export function getDocumentBrand(company: BrandCompany): DocumentBrand {
       text: "#162331",
       pattern: "dots",
       logoFile: "buy2day-logo.png",
+      customLogoPath: company.logoPath,
     };
   }
 
@@ -39,10 +42,14 @@ export function getDocumentBrand(company: BrandCompany): DocumentBrand {
     text: "#17211B",
     pattern: "diagonal",
     logoFile: "dealz-logo.png",
+    customLogoPath: company.logoPath,
   };
 }
 
 export function getBrandLogoPath(brand: DocumentBrand) {
+  if (brand.customLogoPath?.startsWith("/uploads/company-logos/")) {
+    return path.resolve(process.cwd(), "storage", "company-logos", path.basename(brand.customLogoPath));
+  }
   return path.resolve(process.cwd(), "public", "brand", brand.logoFile);
 }
 

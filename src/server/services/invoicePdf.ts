@@ -59,6 +59,7 @@ type InvoicePdfCompany = {
   location: string;
   email: string;
   trn?: string | null;
+  logoPath?: string | null;
   bankName?: string | null;
   bankBeneficiaryName?: string | null;
   bankAccountNumber?: string | null;
@@ -92,7 +93,7 @@ type InvoicePdfData = {
   }>;
 };
 
-function drawCompanyBlock(doc: PDFKit.PDFDocument, brand: ReturnType<typeof getDocumentBrand>, label: string, company: { legalName: string; location: string; email: string; trn?: string | null }, x: number, y: number) {
+function drawCompanyBlock(doc: PDFKit.PDFDocument, brand: ReturnType<typeof getDocumentBrand>, label: string, company: { legalName: string; location: string; email: string; trn?: string | null; logoPath?: string | null }, x: number, y: number) {
   const width = 220;
   drawSectionLabel(doc, brand, label, x, y);
   const lines = [
@@ -118,7 +119,7 @@ function drawBox(doc: PDFKit.PDFDocument, x: number, y: number, width: number, h
   }
 }
 
-function drawTemplateCompany(doc: PDFKit.PDFDocument, title: string, company: { legalName: string; location: string; email: string; trn?: string | null }, x: number, y: number, width: number, height: number) {
+function drawTemplateCompany(doc: PDFKit.PDFDocument, title: string, company: { legalName: string; location: string; email: string; trn?: string | null; logoPath?: string | null }, x: number, y: number, width: number, height: number) {
   drawBox(doc, x, y, width, height, title);
   const rows = [
     ["Name", company.legalName],
