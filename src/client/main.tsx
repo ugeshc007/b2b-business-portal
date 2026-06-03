@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Building2, ChevronDown, ChevronUp, Download, Edit, FileText, LogIn, Mail, Package, Play, RefreshCcw, Save, Send, Settings, ShieldCheck, ShoppingCart, Square, Trash2, Truck, X } from "lucide-react";
+import { Building2, ChevronDown, ChevronUp, Download, Edit, FileText, LogIn, Mail, Package, Play, Plus, RefreshCcw, Save, Send, Settings, ShieldCheck, ShoppingCart, Square, Trash2, Truck, X } from "lucide-react";
 import "./styles.css";
 
 const apiUrl = import.meta.env.VITE_API_URL ?? window.location.origin;
@@ -183,6 +183,7 @@ function App() {
   const [agentRunning, setAgentRunning] = useState(false);
   const [activeView, setActiveView] = useState<View>("overview");
   const [settingsTab, setSettingsTab] = useState<"company" | "email" | "log" | "audit">("company");
+  const [showCreateCompany, setShowCreateCompany] = useState(false);
   const [expandedCompanyIds, setExpandedCompanyIds] = useState<string[]>([]);
   const [companyScopeId, setCompanyScopeId] = useState("ALL");
   const [profileCompanyId, setProfileCompanyId] = useState("");
@@ -532,6 +533,7 @@ function App() {
         }),
       });
       event.currentTarget.reset();
+      setShowCreateCompany(false);
       setExpandedCompanyIds((current) => [...current, created.id]);
       setMessage(`${created.name} company created.`);
       await loadSummary();
@@ -1446,7 +1448,7 @@ function App() {
   }
   const sidebarPortalLinks = summary ? activePortalLinks : fallbackPortalLinks;
   const visibleCompanyOptions = isCompanyPortal ? scopedCompanies : activeCompanies;
-  const settingsCompanyOptions = isCompanyPortal ? scopedCompanies : summary?.companies ?? [];
+  const settingsCompanyOptions = summary?.companies ?? [];
   const workflowSellerId = workflowDirection === "PURCHASE" ? workflowCounterpartyId : workflowCompanyId;
   const workflowProductOptions = (summary?.items ?? []).map((item) => {
     const stock = (summary?.stock ?? []).find((entry) => entry.company.id === workflowSellerId && entry.item.id === item.id);
@@ -1674,7 +1676,21 @@ function App() {
 
             {settingsTab === "company" && (
               <div className="company-card-list">
-                {!isCompanyPortal && (
+                <div className="company-list-toolbar">
+                  <div>
+                    <strong>Companies</strong>
+                    <span>Create, activate, deactivate, edit, or delete company profiles.</span>
+                  </div>
+                  <button
+                    type="button"
+                    className={showCreateCompany ? "secondary-button" : undefined}
+                    onClick={() => setShowCreateCompany((current) => !current)}
+                  >
+                    {showCreateCompany ? <ChevronUp size={17} /> : <Plus size={17} />}
+                    {showCreateCompany ? "Close" : "Add Company"}
+                  </button>
+                </div>
+                {showCreateCompany && (
                   <form className="company-settings-card create-company-card" onSubmit={createCompanyCard}>
                     <div className="company-card-head">
                       <div>

@@ -401,6 +401,23 @@ nav .nav-button.active {
   padding: 16px;
 }
 
+.company-list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0 2px;
+}
+
+.company-list-toolbar div {
+  display: grid;
+  gap: 4px;
+}
+
+.company-list-toolbar span {
+  color: #66756a;
+}
+
 .company-settings-card {
   display: grid;
   gap: 14px;
