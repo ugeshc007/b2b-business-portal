@@ -293,7 +293,20 @@ function App() {
     if (!token) return;
     setLoading(true);
     try {
-      setSummary(await request<Summary>("/api/dashboard/summary"));
+      const nextSummary = await request<Summary>("/api/dashboard/summary");
+      setSummary({
+        ...nextSummary,
+        companies: nextSummary.companies ?? [],
+        items: nextSummary.items ?? [],
+        stock: nextSummary.stock ?? [],
+        targets: nextSummary.targets ?? [],
+        invoices: nextSummary.invoices ?? [],
+        emails: nextSummary.emails ?? [],
+        agentAuditLogs: nextSummary.agentAuditLogs ?? [],
+        emailIntegrations: nextSummary.emailIntegrations ?? [],
+        turnoverTargets: nextSummary.turnoverTargets ?? [],
+        ecommerceOrders: nextSummary.ecommerceOrders ?? [],
+      });
     } finally {
       setLoading(false);
     }
@@ -1242,7 +1255,7 @@ function App() {
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      const invoice = invoiceDetail?.id === invoiceId ? invoiceDetail : summary?.invoices.find((item) => item.id === invoiceId);
+      const invoice = invoiceDetail?.id === invoiceId ? invoiceDetail : (summary?.invoices ?? []).find((item) => item.id === invoiceId);
       link.href = url;
       link.download = `${invoice?.invoiceNumber ?? "invoice"}.pdf`;
       document.body.appendChild(link);
@@ -1381,41 +1394,41 @@ function App() {
 
   const scopedCompanies = companyScopeId === "ALL"
     ? summary?.companies ?? []
-    : summary?.companies.filter((company) => company.id === companyScopeId) ?? [];
+    : (summary?.companies ?? []).filter((company) => company.id === companyScopeId);
   const scopedCompanyEmails = new Set(scopedCompanies.map((company) => company.email));
   const scopedStock = companyScopeId === "ALL"
     ? summary?.stock ?? []
-    : summary?.stock.filter((stock) => stock.company.id === companyScopeId) ?? [];
+    : (summary?.stock ?? []).filter((stock) => stock.company.id === companyScopeId);
   const ecommerceProductRows = (summary?.stock ?? [])
     .filter((stock) => stock.quantity > 0)
     .filter((stock) => companyScopeId === "ALL" || stock.company.id !== companyScopeId);
   const scopedTargets = companyScopeId === "ALL"
     ? summary?.targets ?? []
-    : summary?.targets.filter((target) => target.buyerCompany.id === companyScopeId || target.sellerCompany.id === companyScopeId) ?? [];
+    : (summary?.targets ?? []).filter((target) => target.buyerCompany.id === companyScopeId || target.sellerCompany.id === companyScopeId);
   const todayDate = dateInputValue();
   const todayTargets = scopedTargets.filter((target) => target.targetDate === todayDate);
   const otherWorkflowTargets = scopedTargets.filter((target) => target.targetDate !== todayDate);
   const scopedInvoices = companyScopeId === "ALL"
     ? summary?.invoices ?? []
-    : summary?.invoices.filter((invoice) => invoice.buyerCompany.id === companyScopeId || invoice.sellerCompany.id === companyScopeId) ?? [];
+    : (summary?.invoices ?? []).filter((invoice) => invoice.buyerCompany.id === companyScopeId || invoice.sellerCompany.id === companyScopeId);
   const scopedEmails = companyScopeId === "ALL"
     ? summary?.emails ?? []
-    : summary?.emails.filter((emailLog) => scopedCompanyEmails.has(emailLog.fromEmail) || scopedCompanyEmails.has(emailLog.toEmail)) ?? [];
+    : (summary?.emails ?? []).filter((emailLog) => scopedCompanyEmails.has(emailLog.fromEmail) || scopedCompanyEmails.has(emailLog.toEmail));
   const scopedAgentAuditLogs = summary?.agentAuditLogs ?? [];
   const scopedEmailIntegrations = companyScopeId === "ALL"
     ? summary?.emailIntegrations ?? []
-    : summary?.emailIntegrations.filter((integration) => integration.companyId === companyScopeId) ?? [];
+    : (summary?.emailIntegrations ?? []).filter((integration) => integration.companyId === companyScopeId);
   const scopedStockByCompany = companyScopeId === "ALL"
     ? summary?.overview.stockByCompany ?? []
-    : summary?.overview.stockByCompany.filter((row) => row.companyId === companyScopeId) ?? [];
+    : (summary?.overview.stockByCompany ?? []).filter((row) => row.companyId === companyScopeId);
   const scopedInvoiceTotal = scopedInvoices.reduce((sum, invoice) => sum + Number(invoice.total), 0);
   const scopedVatTotal = scopedInvoices.reduce((sum, invoice) => sum + Number(invoice.vatAmount), 0);
   const scopedTurnoverTargets = companyScopeId === "ALL"
     ? summary?.turnoverTargets ?? []
-    : summary?.turnoverTargets.filter((target) => target.companyId === companyScopeId) ?? [];
+    : (summary?.turnoverTargets ?? []).filter((target) => target.companyId === companyScopeId);
   const scopedEcommerceOrders = companyScopeId === "ALL"
     ? summary?.ecommerceOrders ?? []
-    : summary?.ecommerceOrders.filter((order) => order.buyerCompany.id === companyScopeId || order.sellerCompany.id === companyScopeId) ?? [];
+    : (summary?.ecommerceOrders ?? []).filter((order) => order.buyerCompany.id === companyScopeId || order.sellerCompany.id === companyScopeId);
   const activeCompanies = (summary?.companies ?? []).filter((company) => company.active !== false);
   const activePortalLinks: Array<{ href: string; label: string }> = [];
   const fallbackPortalLinks = [
@@ -1436,7 +1449,7 @@ function App() {
   const settingsCompanyOptions = isCompanyPortal ? scopedCompanies : summary?.companies ?? [];
   const workflowSellerId = workflowDirection === "PURCHASE" ? workflowCounterpartyId : workflowCompanyId;
   const workflowProductOptions = (summary?.items ?? []).map((item) => {
-    const stock = summary?.stock.find((entry) => entry.company.id === workflowSellerId && entry.item.id === item.id);
+    const stock = (summary?.stock ?? []).find((entry) => entry.company.id === workflowSellerId && entry.item.id === item.id);
     return { item, quantity: stock?.quantity ?? 0 };
   }).filter((entry) => entry.quantity > 0);
   const canCreateVendorInvoice = (target: Target) => target.status === "PO_SENT" && (companyScopeId === "ALL" || target.sellerCompany.id === companyScopeId);
@@ -1514,7 +1527,7 @@ function App() {
                 Company Scope
                 <select value={companyScopeId} onChange={(event) => setCompanyScopeId(event.target.value)}>
                   <option value="ALL">All Companies</option>
-                  {summary?.companies.map((company) => (
+                  {(summary?.companies ?? []).map((company) => (
                     <option value={company.id} key={company.id}>{company.name}</option>
                   ))}
                 </select>
@@ -1627,7 +1640,7 @@ function App() {
             <section className="split">
               <Panel title="Recent Database Activity">
                 <div className="table">
-                  {summary?.overview.recentActivity.map((activity) => (
+                  {(summary?.overview.recentActivity ?? []).map((activity) => (
                     <div className="row activity-row" key={`${activity.type}-${activity.id}`}>
                       <span>{activity.type}</span>
                       <span>{activity.title}</span>
@@ -1635,7 +1648,7 @@ function App() {
                       <span>{new Date(activity.date).toLocaleString()}</span>
                     </div>
                   ))}
-                  {!summary?.overview.recentActivity.length && <div className="empty-state">No database activity yet.</div>}
+                  {!(summary?.overview.recentActivity ?? []).length && <div className="empty-state">No database activity yet.</div>}
                 </div>
               </Panel>
             </section>
@@ -2056,7 +2069,7 @@ function App() {
                 Item
                 <select value={stockItemId} onChange={(event) => setStockItemId(event.target.value)}>
                   <option value="">Select item</option>
-                  {summary?.items.map((item) => (
+                  {(summary?.items ?? []).map((item) => (
                     <option value={item.id} key={item.id}>{item.sku} - {item.name}</option>
                   ))}
                 </select>
@@ -2158,7 +2171,7 @@ function App() {
                 {workflowDirection === "PURCHASE" ? "Vendor" : "Customer"}
                 <select value={workflowCounterpartyId} onChange={(event) => setWorkflowCounterpartyId(event.target.value)}>
                   <option value="">Select {workflowDirection === "PURCHASE" ? "vendor" : "customer"}</option>
-                  {summary?.companies.filter((company) => company.id !== workflowCompanyId).map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}
+                  {(summary?.companies ?? []).filter((company) => company.id !== workflowCompanyId).map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}
                 </select>
               </label>
               <label>
@@ -2322,7 +2335,7 @@ function App() {
                 {workflowDirection === "SALES" ? "Customer Name" : "Vendor Name"}
                 <select value={workflowCounterpartyId} onChange={(event) => setWorkflowCounterpartyId(event.target.value)}>
                   <option value="">Select {workflowDirection === "SALES" ? "customer" : "vendor"}</option>
-                  {summary?.companies.filter((company) => company.id !== workflowCompanyId).map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}
+                  {(summary?.companies ?? []).filter((company) => company.id !== workflowCompanyId).map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}
                 </select>
               </label>
               <label>
