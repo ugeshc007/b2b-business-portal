@@ -4,7 +4,8 @@ import { Building2, ChevronDown, ChevronUp, Download, Edit, FileText, LogIn, Mai
 import { appDate, appDateTime, appMonthEnd, appMonthStart } from "../shared/timezone";
 import "./styles.css";
 
-const apiUrl = import.meta.env.VITE_API_URL ?? window.location.origin;
+const defaultApiUrl = window.location.port === "5321" ? "http://127.0.0.1:4321" : window.location.origin;
+const apiUrl = import.meta.env.VITE_API_URL || defaultApiUrl;
 const portalSlug = window.location.pathname.split("/").filter(Boolean)[0]?.toLowerCase() ?? "";
 const portalCompanyName = ["dealz", "dealzarabia"].includes(portalSlug) ? "Dealzarabia" : portalSlug === "buy2day" ? "Buy2day" : "";
 const isCompanyPortal = Boolean(portalCompanyName);
@@ -389,13 +390,26 @@ function App() {
         ...options.headers,
       },
     });
-    const data = await response.json();
+    const responseText = await response.text();
+    let data: { error?: string } & Record<string, unknown> = {};
+    if (responseText) {
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        const htmlResponse = responseText.trimStart().startsWith("<!DOCTYPE") || responseText.trimStart().startsWith("<html");
+        data = {
+          error: htmlResponse
+            ? `API route ${path} returned HTML instead of JSON. Check that the backend is running on ${apiUrl}.`
+            : `API route ${path} returned an invalid response.`,
+        };
+      }
+    }
     if (response.status === 401) {
       localStorage.removeItem("b2b-token");
       setToken("");
     }
     if (!response.ok) throw new Error(data.error ?? "Request failed");
-    return data;
+    return data as T;
   }
 
   async function loadSummary() {
