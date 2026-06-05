@@ -366,10 +366,28 @@ function monthEndInputValue(date = new Date()) {
   return appMonthEnd(date);
 }
 
-function mediaUrl(path?: string | null) {
+function mediaUrl(path?: string | null, cacheKey?: string | number | null) {
   if (!path) return "";
-  if (/^https?:\/\//i.test(path)) return path;
-  return `${apiUrl}${path}`;
+  const separator = path.includes("?") ? "&" : "?";
+  const cacheSuffix = cacheKey ? `${separator}v=${encodeURIComponent(String(cacheKey))}` : "";
+  if (/^https?:\/\//i.test(path)) return `${path}${cacheSuffix}`;
+  return `${apiUrl}${path}${cacheSuffix}`;
+}
+
+function CompanyLogoPreview({ company }: { company: Company }) {
+  const [broken, setBroken] = useState(false);
+  useEffect(() => {
+    setBroken(false);
+  }, [company.logoPath]);
+
+  if (!company.logoPath || broken) return <Building2 size={24} />;
+  return (
+    <img
+      src={mediaUrl(company.logoPath, company.logoPath)}
+      alt={`${company.name} logo`}
+      onError={() => setBroken(true)}
+    />
+  );
 }
 
 function parseAgentInstructionDraft(instruction: string) {
@@ -2353,7 +2371,7 @@ function App() {
                       <div className="company-card-head">
                         <div className="company-card-title">
                           <div className="company-logo-preview">
-                            {company.logoPath ? <img src={mediaUrl(company.logoPath)} alt={`${company.name} logo`} /> : <Building2 size={24} />}
+                            <CompanyLogoPreview company={company} />
                           </div>
                           <div>
                             <strong>{company.name}</strong>

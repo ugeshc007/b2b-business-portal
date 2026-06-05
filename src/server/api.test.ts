@@ -277,7 +277,7 @@ describe("api", () => {
       .put(`/api/catalog/companies/${company.id}/logo`)
       .set("Authorization", `Bearer ${login.body.token}`)
       .set("Content-Type", "image/png")
-      .send(Buffer.from("fake-png-logo"))
+      .send(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=", "base64"))
       .expect(200);
 
     expect(uploaded.body.logoPath).toMatch(/^\/uploads\/company-logos\/.+\.png$/);

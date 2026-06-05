@@ -91,6 +91,11 @@ export async function saveCompanyLogo(companyId: string, input: { mimeType: stri
   };
   const extension = extensionByMime[input.mimeType];
   if (!extension) throw new Error("Logo must be PNG, JPG, or WEBP");
+  const isPng = input.buffer.length > 8 && input.buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  const isJpeg = input.buffer.length > 3 && input.buffer[0] === 0xff && input.buffer[1] === 0xd8 && input.buffer[2] === 0xff;
+  const isWebp = input.buffer.length > 12 && input.buffer.toString("ascii", 0, 4) === "RIFF" && input.buffer.toString("ascii", 8, 12) === "WEBP";
+  const signatureMatches = (extension === "png" && isPng) || (extension === "jpg" && isJpeg) || (extension === "webp" && isWebp);
+  if (!signatureMatches) throw new Error("Logo file content does not match PNG, JPG, or WEBP format");
 
   const storageDir = path.resolve(process.cwd(), "storage", "company-logos");
   fs.mkdirSync(storageDir, { recursive: true });
