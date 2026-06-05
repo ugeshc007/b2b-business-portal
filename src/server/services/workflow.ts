@@ -4,6 +4,7 @@ import { getCompanySmtpSettings } from "./emailIntegrations";
 import { generateInvoicePdf } from "./invoicePdf";
 import { getPurchaseOrderPdf } from "./purchaseOrderPdf";
 import { purchaseOrderHtml } from "./documentEmail";
+import { createStockMovement, itemBuyingPrice, itemSellingPrice } from "./stockLedger";
 import nodemailer from "nodemailer";
 import { appDate } from "../../shared/timezone";
 
@@ -650,6 +651,7 @@ export async function createQuotation(requirementId: string) {
       lines: { include: { item: true } },
       sellerCompany: true,
       buyerCompany: true,
+      target: true,
     },
   });
   if (!requirement) throw new Error("Requirement not found");
@@ -671,7 +673,7 @@ export async function createQuotation(requirementId: string) {
   }
 
   const lines = requirement.lines.map((line) => {
-    const unitPrice = money(line.item.expectedPrice);
+    const unitPrice = requirement.target.direction === "PURCHASE" ? itemBuyingPrice(line.item) : itemSellingPrice(line.item);
     const lineTotal = money(unitPrice.mul(line.quantity));
     const vatRate = requirement.buyerCompany.vatEnabled ? line.item.vatRate : new Prisma.Decimal(0);
     return { itemId: line.itemId, quantity: line.quantity, unitPrice, vatRate, lineTotal };
@@ -740,7 +742,7 @@ export async function autoApproveQuotation(quotationId: string) {
 }
 
 export async function confirmOrder(quotationId: string) {
-  const quotation = await prisma.quotation.findUnique({ where: { id: quotationId }, include: { lines: true } });
+  const quotation = await prisma.quotation.findUnique({ where: { id: quotationId }, include: { lines: { include: { item: true } } } });
   if (!quotation) throw new Error("Quotation not found");
   if (quotation.status !== "APPROVED") throw new Error("Quotation must be approved before order confirmation");
 
@@ -780,6 +782,26 @@ export async function confirmOrder(quotationId: string) {
       where: { companyId_itemId: { companyId: quotation.buyerCompanyId, itemId: line.itemId } },
       update: { quantity: { increment: line.quantity } },
       create: { companyId: quotation.buyerCompanyId, itemId: line.itemId, quantity: line.quantity },
+    });
+    await createStockMovement(prisma, {
+      companyId: quotation.sellerCompanyId,
+      itemId: line.itemId,
+      type: "SALE",
+      quantity: line.quantity,
+      unitPrice: line.unitPrice,
+      source: "PURCHASE_ORDER",
+      reference: order.id,
+      notes: `PO ${order.poNumber}`,
+    });
+    await createStockMovement(prisma, {
+      companyId: quotation.buyerCompanyId,
+      itemId: line.itemId,
+      type: "PURCHASE",
+      quantity: line.quantity,
+      unitCost: line.unitPrice,
+      source: "PURCHASE_ORDER",
+      reference: order.id,
+      notes: `PO ${order.poNumber}`,
     });
   }
 

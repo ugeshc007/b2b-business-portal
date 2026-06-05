@@ -2,6 +2,7 @@ import express, { Router } from "express";
 import { z } from "zod";
 import { requireAuth } from "../middleware";
 import { bulkUpsertStock, createCompany, createItem, deleteCompany, deleteStock, listCatalog, parsePurchaseInvoiceText, parseStockCsv, saveCompanyLogo, setStock, updateCompany } from "../services/catalog";
+import { generateStockFromBusinessPlan, getStockMovementReport } from "../services/stockLedger";
 
 export const catalogRouter = Router();
 catalogRouter.use(requireAuth);
@@ -165,6 +166,26 @@ catalogRouter.post("/stock/from-purchase-invoice", async (req, res, next) => {
       mode: "ADD",
       rows: parsePurchaseInvoiceText(input.invoiceText),
     }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+catalogRouter.post("/stock/from-business-plan", async (req, res, next) => {
+  try {
+    const input = z.object({
+      companyId: z.string(),
+      month: z.string().regex(/^\d{4}-\d{2}$/),
+    }).parse(req.body);
+    res.status(201).json(await generateStockFromBusinessPlan(input));
+  } catch (error) {
+    next(error);
+  }
+});
+
+catalogRouter.get("/stock/movement-report", async (_req, res, next) => {
+  try {
+    res.json(await getStockMovementReport());
   } catch (error) {
     next(error);
   }

@@ -3,6 +3,16 @@ import fs from "node:fs";
 import path from "node:path";
 import { prisma } from "../db";
 
+function normalizeCompanyIdentity(value: string) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\b(l\.?l\.?c|llc|w\.?l\.?l|s\.?p\.?s|fze|branch|trading|electronic|electronics)\b/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
 export async function createCompany(data: {
   name: string;
   legalName: string;
@@ -24,6 +34,20 @@ export async function createCompany(data: {
   if (data.managedByCompanyId) {
     const owner = await prisma.company.findUnique({ where: { id: data.managedByCompanyId } });
     if (!owner) throw new Error("Managed under company not found");
+  }
+  const exactExisting = await prisma.company.findUnique({ where: { email: data.email } })
+    ?? await prisma.company.findFirst({ where: { OR: [{ name: data.name }, { legalName: data.legalName }] } });
+  const existing = exactExisting ?? (await prisma.company.findMany({
+    select: { id: true, name: true, legalName: true },
+  })).find((company) => {
+    const nameIdentity = normalizeCompanyIdentity(data.name);
+    const legalIdentity = normalizeCompanyIdentity(data.legalName);
+    return Boolean(nameIdentity || legalIdentity)
+      && [normalizeCompanyIdentity(company.name), normalizeCompanyIdentity(company.legalName)]
+        .some((identity) => identity && (identity === nameIdentity || identity === legalIdentity));
+  });
+  if (existing) {
+    return updateCompany(existing.id, data);
   }
   return prisma.company.create({
     data: { ...data, managedByCompanyId: data.managedByCompanyId || null, active: data.active ?? true, vatEnabled: data.vatEnabled ?? true, role: data.role ?? "BOTH" },
@@ -127,6 +151,7 @@ export async function deleteCompany(companyId: string) {
     orderCount,
     invoiceCount,
     emailLogCount,
+    stockMovementCount,
   ] = await Promise.all([
     prisma.monthlyTarget.count({ where: { OR: [{ buyerCompanyId: companyId }, { sellerCompanyId: companyId }] } }),
     prisma.requirement.count({ where: { OR: [{ buyerCompanyId: companyId }, { sellerCompanyId: companyId }] } }),
@@ -134,14 +159,16 @@ export async function deleteCompany(companyId: string) {
     prisma.purchaseOrder.count({ where: { OR: [{ buyerCompanyId: companyId }, { sellerCompanyId: companyId }] } }),
     prisma.invoice.count({ where: { OR: [{ buyerCompanyId: companyId }, { sellerCompanyId: companyId }] } }),
     prisma.emailLog.count({ where: { OR: [{ fromEmail: company.email }, { toEmail: company.email }] } }),
+    prisma.stockMovement.count({ where: { companyId } }),
   ]);
 
-  const historyCount = targetCount + requirementCount + quotationCount + orderCount + invoiceCount + emailLogCount;
+  const historyCount = targetCount + requirementCount + quotationCount + orderCount + invoiceCount + emailLogCount + stockMovementCount;
   if (historyCount > 0) {
     throw new Error("Company has transaction history. Deactivate it instead.");
   }
 
   await prisma.$transaction([
+    prisma.stockMovement.deleteMany({ where: { companyId } }),
     prisma.stock.deleteMany({ where: { companyId } }),
     prisma.emailIntegration.deleteMany({ where: { companyId } }),
     prisma.turnoverTarget.deleteMany({ where: { companyId } }),

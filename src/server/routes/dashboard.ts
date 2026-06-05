@@ -2,13 +2,14 @@ import { Router } from "express";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../db";
 import { requireAuth } from "../middleware";
+import { getStockMovementReport } from "../services/stockLedger";
 
 export const dashboardRouter = Router();
 dashboardRouter.use(requireAuth);
 
 dashboardRouter.get("/summary", async (_req, res, next) => {
   try {
-    const [companies, items, targets, requirements, quotations, orders, invoices, emails, stock, emailIntegrations, turnoverTargets, agentAuditLogs, ecommerceOrders] = await Promise.all([
+    const [companies, items, targets, requirements, quotations, orders, invoices, emails, stock, emailIntegrations, turnoverTargets, agentAuditLogs, ecommerceOrders, stockMovementReport] = await Promise.all([
       prisma.company.findMany({ include: { managedByCompany: true } }),
       prisma.item.findMany(),
       prisma.monthlyTarget.findMany({
@@ -34,6 +35,7 @@ dashboardRouter.get("/summary", async (_req, res, next) => {
         orderBy: { createdAt: "desc" },
         take: 100,
       }),
+      getStockMovementReport(),
     ]);
 
     const invoiceTotal = invoices.reduce((sum, invoice) => sum.plus(invoice.total), new Prisma.Decimal(0));
@@ -130,6 +132,7 @@ dashboardRouter.get("/summary", async (_req, res, next) => {
       stock,
       emailIntegrations,
       turnoverTargets,
+      stockMovementReport,
       agentAuditLogs,
       ecommerceOrders,
     });

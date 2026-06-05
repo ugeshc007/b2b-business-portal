@@ -15,6 +15,7 @@ import { ecommerceRouter } from "./routes/ecommerce";
 import { businessPlanImportRouter } from "./routes/businessPlanImport";
 import { systemLogsRouter } from "./routes/systemLogs";
 import { maintenanceRouter } from "./routes/maintenance";
+import { reportsRouter } from "./routes/reports";
 import { logError, requestResponseLogger } from "./services/appLogger";
 import { prisma } from "./db";
 import { env } from "./env";
@@ -60,6 +61,7 @@ export function createApp() {
   app.use("/api/business-plan-import", businessPlanImportRouter);
   app.use("/api/system-logs", systemLogsRouter);
   app.use("/api/maintenance", maintenanceRouter);
+  app.use("/api/reports", reportsRouter);
 
   app.use("/uploads/company-logos", express.static(path.resolve(process.cwd(), "storage", "company-logos")));
 

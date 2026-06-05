@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { requireAuth } from "../middleware";
-import { getLogStatus, getRecentLogs } from "../services/appLogger";
+import { requireAuth, requireFinanceOrAdmin } from "../middleware";
+import { getLogDownload, getLogStatus, getRecentLogs } from "../services/appLogger";
 
 export const systemLogsRouter = Router();
 systemLogsRouter.use(requireAuth);
@@ -13,6 +13,17 @@ systemLogsRouter.get("/", (req, res, next) => {
       status: getLogStatus(),
       logs: getRecentLogs({ level, limit }),
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+systemLogsRouter.get("/download", requireFinanceOrAdmin, (_req, res, next) => {
+  try {
+    const file = getLogDownload();
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${file.filename}"`);
+    res.send(file.body);
   } catch (error) {
     next(error);
   }

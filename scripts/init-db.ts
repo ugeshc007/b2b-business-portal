@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS User (
   email TEXT NOT NULL UNIQUE,
   passwordHash TEXT NOT NULL,
   name TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'ADMIN',
+  companyId TEXT,
   createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -86,6 +88,26 @@ CREATE TABLE IF NOT EXISTS Stock (
   FOREIGN KEY (itemId) REFERENCES Item(id) ON DELETE RESTRICT ON UPDATE CASCADE
 );
 CREATE UNIQUE INDEX IF NOT EXISTS Stock_companyId_itemId_key ON Stock(companyId, itemId);
+
+CREATE TABLE IF NOT EXISTS StockMovement (
+  id TEXT PRIMARY KEY NOT NULL,
+  companyId TEXT NOT NULL,
+  itemId TEXT NOT NULL,
+  type TEXT NOT NULL,
+  quantity INTEGER NOT NULL,
+  unitCost DECIMAL,
+  unitPrice DECIMAL,
+  purchaseValue DECIMAL NOT NULL DEFAULT 0,
+  salesValue DECIMAL NOT NULL DEFAULT 0,
+  source TEXT,
+  reference TEXT,
+  notes TEXT,
+  createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (companyId) REFERENCES Company(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+  FOREIGN KEY (itemId) REFERENCES Item(id) ON DELETE RESTRICT ON UPDATE CASCADE
+);
+CREATE INDEX IF NOT EXISTS StockMovement_companyId_itemId_idx ON StockMovement(companyId, itemId);
+CREATE INDEX IF NOT EXISTS StockMovement_source_reference_idx ON StockMovement(source, reference);
 
 CREATE TABLE IF NOT EXISTS EcommerceOrder (
   id TEXT PRIMARY KEY NOT NULL,
@@ -398,6 +420,14 @@ if (!monthlyTargetColumns.some((column) => column.name === "productMode")) {
 }
 if (!monthlyTargetColumns.some((column) => column.name === "amountVolume")) {
   db.exec("ALTER TABLE MonthlyTarget ADD COLUMN amountVolume DECIMAL;");
+}
+
+const userColumns = db.prepare("PRAGMA table_info(User)").all() as Array<{ name: string }>;
+if (!userColumns.some((column) => column.name === "role")) {
+  db.exec("ALTER TABLE User ADD COLUMN role TEXT NOT NULL DEFAULT 'ADMIN';");
+}
+if (!userColumns.some((column) => column.name === "companyId")) {
+  db.exec("ALTER TABLE User ADD COLUMN companyId TEXT;");
 }
 
 db.close();

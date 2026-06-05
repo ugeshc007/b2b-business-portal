@@ -155,6 +155,22 @@ export function getLogStatus() {
   return { logsDir, retentionDays, files: files.length, totalBytes };
 }
 
+export function getLogDownload() {
+  fs.mkdirSync(logsDir, { recursive: true });
+  cleanupOldLogs();
+  const files = fs.readdirSync(logsDir)
+    .filter((file) => /^app-\d{4}-\d{2}-\d{2}\.log$/.test(file))
+    .sort();
+  const body = files.map((file) => {
+    const filePath = path.join(logsDir, file);
+    return [`# ${file}`, fs.readFileSync(filePath, "utf8")].join("\n");
+  }).join("\n");
+  return {
+    filename: `b2b-logs-${dayStamp()}.log`,
+    body,
+  };
+}
+
 export function clearApplicationLogs() {
   fs.mkdirSync(logsDir, { recursive: true });
   let deleted = 0;

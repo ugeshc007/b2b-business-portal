@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "../db";
+import { createStockMovement, itemSellingPrice } from "./stockLedger";
 
 function money(value: Prisma.Decimal.Value) {
   return new Prisma.Decimal(value).toDecimalPlaces(2);
@@ -28,7 +29,7 @@ export async function createEcommerceOrder(input: {
   if (!item || item.active === false) throw new Error("Active product not found");
   if (!stock || stock.quantity - stock.reserved < input.quantity) throw new Error("Insufficient product stock");
 
-  const unitPrice = money(item.expectedPrice);
+  const unitPrice = itemSellingPrice(item);
   const vatRate = buyer.vatEnabled ? item.vatRate : new Prisma.Decimal(0);
   const subtotal = money(unitPrice.mul(input.quantity));
   const vatAmount = money(subtotal.mul(vatRate));
@@ -40,7 +41,7 @@ export async function createEcommerceOrder(input: {
       data: { quantity: { decrement: input.quantity } },
     });
 
-    return tx.ecommerceOrder.create({
+    const order = await tx.ecommerceOrder.create({
       data: {
         buyerCompanyId: input.buyerCompanyId,
         sellerCompanyId: input.sellerCompanyId,
@@ -54,6 +55,17 @@ export async function createEcommerceOrder(input: {
       },
       include: { buyerCompany: true, sellerCompany: true, item: true },
     });
+    await createStockMovement(tx, {
+      companyId: input.sellerCompanyId,
+      itemId: input.itemId,
+      type: "SALE",
+      quantity: input.quantity,
+      unitPrice,
+      source: "ECOMMERCE_ORDER",
+      reference: order.id,
+      notes: `Sold to ${buyer.name}`,
+    });
+    return order;
   });
 }
 

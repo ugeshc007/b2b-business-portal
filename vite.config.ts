@@ -6,5 +6,8 @@ export default defineConfig({
   server: {
     host: "127.0.0.1",
     port: 5321,
+    proxy: {
+      "/uploads": "http://127.0.0.1:4321",
+    },
   },
 });

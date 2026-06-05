@@ -18,6 +18,7 @@ beforeEach(async () => {
   await prisma.emailLog.deleteMany();
   await prisma.agentDecision.deleteMany();
   await prisma.emailIntegration.deleteMany();
+  await prisma.stockMovement.deleteMany();
   await prisma.ecommerceOrder.deleteMany();
   await prisma.invoiceLine.deleteMany();
   await prisma.invoice.deleteMany();
@@ -42,6 +43,7 @@ afterAll(async () => {
   await prisma.ecommerceOrder.deleteMany();
   await prisma.agentDecision.deleteMany();
   await prisma.emailIntegration.deleteMany();
+  await prisma.stockMovement.deleteMany();
   await prisma.invoiceLine.deleteMany();
   await prisma.invoice.deleteMany();
   await prisma.purchaseOrderLine.deleteMany();
@@ -100,6 +102,63 @@ describe("api", () => {
     expect(logs.body.logs.some((entry: { event: string; message?: string }) =>
       entry.event === "application_error" && entry.message?.includes("Stock row not found")
     )).toBe(true);
+  });
+
+  it("enforces roles for production safety routes and supports backups/log download", async () => {
+    await createUser("admin@example.com", "ChangeMe123!", "Admin", "ADMIN");
+    await createUser("finance@example.com", "ChangeMe123!", "Finance", "FINANCE");
+    await createUser("viewer@example.com", "ChangeMe123!", "Viewer", "VIEWER");
+    const adminLogin = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "admin@example.com", password: "ChangeMe123!" })
+      .expect(200);
+    const financeLogin = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "finance@example.com", password: "ChangeMe123!" })
+      .expect(200);
+    const viewerLogin = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "viewer@example.com", password: "ChangeMe123!" })
+      .expect(200);
+
+    expect(adminLogin.body.user.role).toBe("ADMIN");
+    expect(financeLogin.body.user.role).toBe("FINANCE");
+
+    await request(app)
+      .post("/api/maintenance/flush-transactional-data")
+      .set("Authorization", `Bearer ${viewerLogin.body.token}`)
+      .send({ categories: ["transactions"] })
+      .expect(403);
+
+    const backup = await request(app)
+      .post("/api/maintenance/backups")
+      .set("Authorization", `Bearer ${financeLogin.body.token}`)
+      .expect(201);
+    expect(backup.body.fileName).toMatch(/^db-\d{8}-\d{6}\.db$/);
+
+    const backups = await request(app)
+      .get("/api/maintenance/backups")
+      .set("Authorization", `Bearer ${financeLogin.body.token}`)
+      .expect(200);
+    expect(backups.body.backups.length).toBeGreaterThan(0);
+
+    await request(app)
+      .post("/api/maintenance/restore")
+      .set("Authorization", `Bearer ${financeLogin.body.token}`)
+      .send({ fileName: backup.body.fileName, typedConfirmation: "RESTORE DATABASE" })
+      .expect(403);
+
+    await request(app)
+      .post("/api/maintenance/restore")
+      .set("Authorization", `Bearer ${adminLogin.body.token}`)
+      .send({ fileName: backup.body.fileName, typedConfirmation: "WRONG" })
+      .expect(400);
+
+    const logs = await request(app)
+      .get("/api/system-logs/download")
+      .set("Authorization", `Bearer ${financeLogin.body.token}`)
+      .expect(200);
+    expect(logs.headers["content-disposition"]).toContain("b2b-logs");
   });
 
   it("sets stock for a company and item through the protected API", async () => {
@@ -258,6 +317,25 @@ describe("api", () => {
 
     expect(updated.body.role).toBe("SELLER");
     expect(updated.body.managedByCompanyId).toBe(owner.id);
+
+    const duplicateByName = await request(app)
+      .post("/api/catalog/companies")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .send({
+        name: "New Company Trading",
+        legalName: "New Company Trading LLC",
+        role: "BOTH",
+        managedByCompanyId: owner.id,
+        location: "Sharjah, UAE",
+        email: "new-company-updated@example.com",
+        active: true,
+        vatEnabled: true,
+      })
+      .expect(201);
+
+    expect(duplicateByName.body.id).toBe(created.body.id);
+    expect(duplicateByName.body.email).toBe("new-company-updated@example.com");
+    expect(await prisma.company.count()).toBe(2);
   });
 
   it("uploads a company logo and exposes the preview path", async () => {
@@ -336,9 +414,133 @@ describe("api", () => {
     expect(preview.body.counts.companies).toBe(1);
     expect(preview.body.counts.products).toBe(1);
     expect(preview.body.counts.bankStatusRows).toBe(1);
+    expect(preview.body.fieldMappings[0].detected).toBe(true);
+    expect(preview.body.fieldMappings[1].detected).toBe(true);
+    expect(preview.body.products[0].sku).toBe("AMAZON-UAE-100");
+    expect(preview.body.counts.checklistItems).toBe(0);
     expect(preview.body.companies[0].email).toBe("example@example.com");
     expect(preview.body.companies[0].revenueTargetMin).toBe(2000000);
     expect(preview.body.products[0].title).toBe("Amazon UAE - 100");
+  });
+
+  it("previews and imports a single-company business plan scenario", async () => {
+    await createUser("admin@example.com", "ChangeMe123!", "Admin");
+    const login = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "admin@example.com", password: "ChangeMe123!" })
+      .expect(200);
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([
+      {
+        Plan: "Purchase",
+        Index: 1,
+        "Company Name ": "Dealzarabia Electronics Trading L.L.C -AUH Branch; Email:dealzinvoice@gmail.com; Address:Abu Dhabi Industrial City",
+        "Product specification ": "Purchase Stock page Products 90% of Revenue Target",
+        "Price for Buying and Selling ": "Stock page Product Price buying",
+        "Vendor (B2B)": "70% purchase on Buy2Day Electronic Trading LLC Dubai, 30% Purchase on Buy2Day Electronic Trading LLC AUH",
+        "Bank Account of Company": "Company Name: Dealzarabia Electronics Trading L.L.C Ajman\nBank Name: ADCB\nBeneficiary Account Name: DEALZARABIA ELECTRONICS TRADING L.L.C\nAccount Number: 14163970920001\nIBAN Number: AE640030014163970920001\nBranch: AJMAN BRANCH",
+        "Revenue Target Details in AED/Month ": "2 million",
+        "Targeted Number of Invoice /Week": "50-80 Invoice.Per Invoice below 10k some time can be more .Total should be500K Per week",
+      },
+      {
+        Plan: "Sales",
+        "Company Name ": "Dealzarabia Electronics Trading L.L.C -AUH Branch; Email:dealzinvoice@gmail.com; Address:Abu Dhabi Industrial City",
+        "Product specification ": "Sales Stock Use selling price",
+        "Price for Buying and Selling ": "Stock page Product Price Selling",
+        "Customer (B2B)": "1, NOOR AL WATAN SALE OF E-CARDS AND SLICES AND OUTFITS (S.P.S - L.L.C) ; Address Business bin hareb center, Ajman, UAE\n\n2, Joy Basket Trading LLC; Address: Office No. 307, Dubai",
+        "Vendor (B2B)": "1, NOOR AL WATAN SALE OF E-CARDS AND SLICES AND OUTFITS (S.P.S - L.L.C) sales 25%\n2, Joy Basket Trading LLC sales 25%",
+      },
+    ]), "Business Plan");
+    const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
+
+    const preview = await request(app)
+      .post("/api/business-plan-import/preview")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+      .send(buffer)
+      .expect(200);
+
+    expect(preview.body.workbook.companySheetFound).toBe(true);
+    expect(preview.body.counts.companies).toBe(2);
+    expect(preview.body.counts.purchaseVendors).toBe(2);
+    expect(preview.body.counts.salesCustomers).toBe(2);
+    expect(preview.body.scenario.mainCompany.email).toBe("dealzinvoice@gmail.com");
+    expect(preview.body.scenario.purchasePlan.transactionPercent).toBe(0.9);
+    expect(preview.body.scenario.purchasePlan.transactionAmountMin).toBe(1800000);
+    expect(preview.body.scenario.purchaseVendors[0].allocationPercent).toBe(70);
+    expect(preview.body.scenario.salesAllocations[0].allocationPercent).toBe(25);
+
+    const imported = await request(app)
+      .post("/api/business-plan-import/import-scenario")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+      .send(buffer)
+      .expect(200);
+
+    expect(imported.body.company).toBe("CREATED");
+    expect(imported.body.partnersCreated).toBe(4);
+    expect(imported.body.turnoverTargetsCreated).toBe(1);
+    expect(imported.body.rulesSaved).toBe(1);
+    expect(await prisma.company.count()).toBe(5);
+
+    const mainCompany = await prisma.company.findUnique({ where: { email: "dealzinvoice@gmail.com" } });
+    expect(mainCompany).toBeTruthy();
+    expect(mainCompany?.bankName).toBe("ADCB");
+    expect(mainCompany?.bankIban).toBe("AE640030014163970920001");
+    expect(await prisma.turnoverTarget.count({ where: { companyId: mainCompany!.id, type: "PURCHASE" } })).toBe(1);
+    const purchaseTarget = await prisma.turnoverTarget.findFirst({ where: { companyId: mainCompany!.id, type: "PURCHASE" } });
+    expect(Number(purchaseTarget?.amount)).toBe(1800000);
+    expect(purchaseTarget?.notes).toContain("90% of revenue target");
+    expect(await prisma.appSetting.count({ where: { key: `businessPlan:${mainCompany!.id}` } })).toBe(1);
+  });
+
+  it("imports a business plan under a selected existing company instead of creating a duplicate owner", async () => {
+    await createUser("admin@example.com", "ChangeMe123!", "Admin");
+    const login = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "admin@example.com", password: "ChangeMe123!" })
+      .expect(200);
+
+    const existingCompany = await createCompany({
+      name: "Dealzarabia",
+      legalName: "Dealzarabia Electronics Trading L.L.C",
+      role: "BOTH",
+      location: "Dubai, UAE",
+      email: "existing-dealz@example.com",
+    });
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([
+      {
+        Plan: "Purchase",
+        "Company Name ": "Different Excel Owner LLC; Email:excel-owner@example.com; Address:Abu Dhabi",
+        "Vendor (B2B)": "60% purchase on Buy2Day Electronic Trading LLC Dubai",
+        "Revenue Target Details in AED/Month ": "2 million",
+        "Product specification ": "Purchase Stock page Products 90% of Revenue Target",
+      },
+      {
+        Plan: "Sales",
+        "Company Name ": "Different Excel Owner LLC; Email:excel-owner@example.com; Address:Abu Dhabi",
+        "Customer (B2B)": "1, Joy Basket Trading LLC; Address: Office No. 307, Dubai",
+        "Vendor (B2B)": "1, Joy Basket Trading LLC sales 40%",
+      },
+    ]), "Business Plan");
+    const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
+
+    const imported = await request(app)
+      .post(`/api/business-plan-import/import-scenario?companyId=${existingCompany.id}`)
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+      .send(buffer)
+      .expect(200);
+
+    expect(imported.body.company).toBe("UPDATED");
+    expect(await prisma.company.count({ where: { managedByCompanyId: null } })).toBe(1);
+    expect(await prisma.company.count({ where: { name: "Different Excel Owner LLC" } })).toBe(0);
+    expect(await prisma.appSetting.count({ where: { key: `businessPlan:${existingCompany.id}` } })).toBe(1);
+    expect(await prisma.turnoverTarget.count({ where: { companyId: existingCompany.id, type: "PURCHASE" } })).toBe(1);
+    expect(await prisma.company.count({ where: { managedByCompanyId: existingCompany.id } })).toBe(2);
   });
 
   it("imports product price rows from the business plan product sheet", async () => {
@@ -536,6 +738,215 @@ describe("api", () => {
       .set("Authorization", `Bearer ${login.body.token}`)
       .expect(200);
     expect(summary.body.ecommerceOrders[0].id).toBe(order.body.id);
+  });
+
+  it("generates stock from purchase target and reports movement values", async () => {
+    await createUser("admin@example.com", "ChangeMe123!", "Admin");
+    const company = await createCompany({
+      name: "Plan Stock Company",
+      legalName: "Plan Stock Company LLC",
+      location: "Dubai",
+      email: "plan-stock@example.com",
+    });
+    const buyer = await createCompany({
+      name: "Plan Stock Buyer",
+      legalName: "Plan Stock Buyer LLC",
+      location: "Abu Dhabi",
+      email: "plan-stock-buyer@example.com",
+    });
+    const itemA = await prisma.item.create({
+      data: {
+        sku: "PLAN-A",
+        name: "Plan Product A",
+        unit: "code",
+        expectedPrice: 80,
+        buyingPrice: 50,
+        vatRate: 0.05,
+      },
+    });
+    await prisma.item.create({
+      data: {
+        sku: "PLAN-B",
+        name: "Plan Product B",
+        unit: "code",
+        expectedPrice: 150,
+        buyingPrice: 100,
+        vatRate: 0.05,
+      },
+    });
+    await prisma.turnoverTarget.create({
+      data: {
+        companyId: company.id,
+        type: "PURCHASE",
+        month: "2026-06",
+        amount: 1000,
+        notes: "90% transaction stock target",
+      },
+    });
+    const login = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "admin@example.com", password: "ChangeMe123!" })
+      .expect(200);
+
+    const generated = await request(app)
+      .post("/api/catalog/stock/from-business-plan")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .send({ companyId: company.id, month: "2026-06" })
+      .expect(201);
+
+    expect(generated.body.generated).toBe(true);
+    expect(generated.body.productCount).toBe(2);
+    expect(generated.body.generatedPurchaseValue).toBe("1000");
+
+    await request(app)
+      .post("/api/ecommerce/orders")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .send({
+        buyerCompanyId: buyer.id,
+        sellerCompanyId: company.id,
+        itemId: itemA.id,
+        quantity: 2,
+      })
+      .expect(201);
+
+    const report = await request(app)
+      .get("/api/catalog/stock/movement-report")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .expect(200);
+    const planA = report.body.find((row: { sku: string }) => row.sku === "PLAN-A");
+    expect(planA.purchasedQuantity).toBe(10);
+    expect(planA.soldQuantity).toBe(2);
+    expect(planA.balanceQuantity).toBe(8);
+    expect(planA.purchaseValue).toBe("500");
+    expect(planA.salesValue).toBe("160");
+    expect(planA.balanceBuyingValue).toBe("400");
+    expect(planA.balanceSellingValue).toBe("640");
+
+    const summary = await request(app)
+      .get("/api/dashboard/summary")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .expect(200);
+    expect(summary.body.stockMovementReport.some((row: { sku: string }) => row.sku === "PLAN-B")).toBe(true);
+  });
+
+  it("runs imported business plan agent across vendor purchases and customer sales", async () => {
+    await createUser("admin@example.com", "ChangeMe123!", "Admin");
+    const main = await createCompany({
+      name: "Plan Main",
+      legalName: "Plan Main LLC",
+      location: "Dubai",
+      email: "plan-main@example.com",
+    });
+    const vendor = await createCompany({
+      name: "Plan Vendor",
+      legalName: "Plan Vendor LLC",
+      role: "SELLER",
+      managedByCompanyId: main.id,
+      location: "Sharjah",
+      email: "plan-vendor@example.com",
+    });
+    const customer = await createCompany({
+      name: "Plan Customer",
+      legalName: "Plan Customer LLC",
+      role: "BUYER",
+      managedByCompanyId: main.id,
+      location: "Abu Dhabi",
+      email: "plan-customer@example.com",
+    });
+    await prisma.item.create({
+      data: {
+        sku: "AGENT-A",
+        name: "Agent Product A",
+        unit: "code",
+        expectedPrice: 80,
+        buyingPrice: 50,
+        maxPrice: 80,
+        vatRate: 0.05,
+      },
+    });
+    await prisma.item.create({
+      data: {
+        sku: "AGENT-B",
+        name: "Agent Product B",
+        unit: "code",
+        expectedPrice: 120,
+        buyingPrice: 60,
+        maxPrice: 120,
+        vatRate: 0.05,
+      },
+    });
+    await prisma.turnoverTarget.createMany({
+      data: [
+        { companyId: main.id, type: "PURCHASE", month: "2026-06", amount: 200, notes: "Purchase test target" },
+        { companyId: main.id, type: "SALES", month: "2026-06", amount: 160, notes: "Sales test target" },
+      ],
+    });
+    await prisma.appSetting.create({
+      data: {
+        key: `businessPlan:${main.id}`,
+        value: JSON.stringify({
+          mainCompanyId: main.id,
+          purchaseVendors: [{ name: vendor.name, allocationPercent: 100 }],
+          salesCustomers: [{ name: customer.name, allocationPercent: 100 }],
+          salesAllocations: [{ name: customer.name, allocationPercent: 100 }],
+          purchasePlan: { invoiceRuleText: "Per invoice below AED 100", invoiceCountMin: 2, invoiceCountMax: 2 },
+          salesPlan: { invoiceRuleText: "Per invoice below AED 80", invoiceCountMin: 2, invoiceCountMax: 2 },
+        }),
+      },
+    });
+    const login = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "admin@example.com", password: "ChangeMe123!" })
+      .expect(200);
+
+    const result = await request(app)
+      .post("/api/workflow/business-plan-agent/run")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .send({
+        companyId: main.id,
+        month: "2026-06",
+        dateFrom: "2026-06-01",
+        dateTo: "2026-06-02",
+        lineCount: 1,
+      })
+      .expect(201);
+
+    expect(result.body.purchase.invoices).toBe(2);
+    expect(result.body.sales.invoices).toBe(2);
+    expect(result.body.targetIds).toHaveLength(4);
+    expect(await prisma.invoice.count()).toBe(4);
+    expect(await prisma.stockMovement.count({ where: { companyId: main.id, type: "PURCHASE" } })).toBe(2);
+    expect(await prisma.stockMovement.count({ where: { companyId: main.id, type: "SALE" } })).toBe(2);
+
+    const report = await request(app)
+      .get("/api/catalog/stock/movement-report")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .expect(200);
+    const mainRows = report.body.filter((row: { companyId: string }) => row.companyId === main.id);
+    expect(mainRows.reduce((sum: number, row: { purchasedQuantity: number }) => sum + row.purchasedQuantity, 0)).toBeGreaterThan(0);
+    expect(mainRows.reduce((sum: number, row: { soldQuantity: number }) => sum + row.soldQuantity, 0)).toBeGreaterThan(0);
+    expect(await prisma.agentAuditLog.count({ where: { step: "BUSINESS_PLAN_AGENT_COMPLETED" } })).toBe(1);
+
+    const reports = await request(app)
+      .get(`/api/reports?companyId=${main.id}&month=2026-06`)
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .expect(200);
+    expect(reports.body.purchase.vendorWise[0].vendorName).toBe("Plan Vendor");
+    expect(reports.body.purchase.productWise.length).toBeGreaterThan(0);
+    expect(reports.body.purchase.invoiceWise).toHaveLength(2);
+    expect(reports.body.sales.customerWise[0].customerName).toBe("Plan Customer");
+    expect(reports.body.sales.productWise.length).toBeGreaterThan(0);
+    expect(reports.body.sales.invoiceWise).toHaveLength(2);
+    expect(reports.body.profit.rows.length).toBeGreaterThan(0);
+    expect(Number(reports.body.profit.rows[0].margin)).toBeGreaterThanOrEqual(0);
+    expect(reports.body.profit.vat.outputVat).toBeDefined();
+    expect(reports.body.stock.rows.length).toBeGreaterThan(0);
+    expect(reports.body.stock.rows.some((row: { purchased: number; sold: number; closing: number }) => row.purchased > 0 || row.sold > 0 || row.closing > 0)).toBe(true);
+    expect(reports.body.targetAchievement.rows).toHaveLength(2);
+    expect(reports.body.targetAchievement.rows.every((row: { plannedValue: string; actualValue: string }) => row.plannedValue !== undefined && row.actualValue !== undefined)).toBe(true);
+    expect(reports.body.audit.events.some((event: { type: string }) => event.type === "AGENT_STEP")).toBe(true);
+    expect(reports.body.audit.events.some((event: { type: string }) => event.type === "EMAIL_SENT")).toBe(true);
+    expect(reports.body.audit.events.some((event: { type: string }) => event.type === "INVOICE_GENERATED")).toBe(true);
   });
 
   it("blocks deleting a company with transaction history", async () => {

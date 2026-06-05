@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireAuth } from "../middleware";
 import { createAgentInstructionTarget, createDailyTransactionTarget, createMonthlyTarget, createRandomMonthlyTarget, createTransactionTarget, deleteMonthlyTarget, runTargetWorkflow, stopTargetWorkflow, updateMonthlyTarget, vendorCreateInvoiceForTarget } from "../services/workflow";
 import { getPurchaseOrderPdfForTarget } from "../services/purchaseOrderPdf";
+import { runBusinessPlanAgent } from "../services/businessPlanAgent";
 
 export const workflowRouter = Router();
 workflowRouter.use(requireAuth);
@@ -110,6 +111,21 @@ workflowRouter.post("/targets/agent", async (req, res, next) => {
       itemIds: z.array(z.string()).optional(),
     }).parse(req.body);
     res.status(201).json(await createAgentInstructionTarget(input));
+  } catch (error) {
+    next(error);
+  }
+});
+
+workflowRouter.post("/business-plan-agent/run", async (req, res, next) => {
+  try {
+    const input = z.object({
+      companyId: z.string(),
+      month: z.string().regex(/^\d{4}-\d{2}$/),
+      dateFrom: dateSchema.optional(),
+      dateTo: dateSchema.optional(),
+      lineCount: z.number().int().positive().max(20).optional(),
+    }).parse(req.body);
+    res.status(201).json(await runBusinessPlanAgent(input));
   } catch (error) {
     next(error);
   }

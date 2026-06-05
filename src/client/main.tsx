@@ -47,6 +47,23 @@ type Item = {
   marginPercent?: string;
 };
 type Stock = { id: string; quantity: number; company: Company; item: Item };
+type StockMovementReportRow = {
+  companyId: string;
+  companyName: string;
+  itemId: string;
+  sku: string;
+  itemName: string;
+  unit: string;
+  buyingPrice: string;
+  sellingPrice: string;
+  purchasedQuantity: number;
+  soldQuantity: number;
+  balanceQuantity: number;
+  purchaseValue: string;
+  salesValue: string;
+  balanceBuyingValue: string;
+  balanceSellingValue: string;
+};
 type Target = {
   id: string;
   month: string;
@@ -137,6 +154,7 @@ type ConfirmationToast = {
   message: string;
   confirmLabel: string;
   danger?: boolean;
+  typedPhrase?: string;
   onConfirm: () => Promise<void>;
 };
 type Summary = {
@@ -145,6 +163,7 @@ type Summary = {
   companies: Company[];
   items: Item[];
   stock: Stock[];
+  stockMovementReport: StockMovementReportRow[];
   targets: Target[];
   invoices: Invoice[];
   emails: EmailLog[];
@@ -152,6 +171,32 @@ type Summary = {
   emailIntegrations: EmailIntegration[];
   turnoverTargets: TurnoverTarget[];
   ecommerceOrders: EcommerceOrder[];
+};
+
+type ReportsData = {
+  purchase: {
+    vendorWise: Array<{ vendorId: string; vendorName: string; invoiceCount: number; quantity: number; subtotal: string; vatAmount: string; total: string }>;
+    productWise: Array<{ itemId: string; sku: string; itemName: string; quantity: number; buyingValue: string; vatAmount: string }>;
+    invoiceWise: Array<{ invoiceId: string; invoiceNumber: string; poNumber: string; date: string; buyerName: string; vendorName: string; subtotal: string; vatAmount: string; total: string }>;
+  };
+  sales: {
+    customerWise: Array<{ customerId: string; customerName: string; invoiceCount: number; quantity: number; subtotal: string; vatAmount: string; total: string }>;
+    productWise: Array<{ itemId: string; sku: string; itemName: string; quantity: number; sellingValue: string; vatAmount: string }>;
+    invoiceWise: Array<{ invoiceId: string; invoiceNumber: string; poNumber: string; date: string; sellerName: string; customerName: string; subtotal: string; vatAmount: string; total: string }>;
+  };
+  profit: {
+    rows: Array<{ companyId: string; companyName: string; sku: string; itemName: string; purchasedQuantity: number; soldQuantity: number; buyingValue: string; sellingValue: string; margin: string; marginPercent: number }>;
+    vat: { inputVat: string; outputVat: string; netVat: string };
+  };
+  stock: {
+    rows: Array<{ companyId: string; companyName: string; sku: string; itemName: string; opening: number; purchased: number; sold: number; closing: number; closingBuyingValue: string; closingSellingValue: string }>;
+  };
+  targetAchievement: {
+    rows: Array<{ companyId: string; companyName: string; month: string; type: string; plannedValue: string; actualValue: string; variance: string; achievementPercent: number; invoiceCount: number }>;
+  };
+  audit: {
+    events: Array<{ id: string; date: string; type: string; status: string; title: string; detail: string; failureReason?: string | null }>;
+  };
 };
 
 type BusinessPlanPreview = {
@@ -163,20 +208,37 @@ type BusinessPlanPreview = {
   };
   counts: {
     companies: number;
+    purchaseVendors: number;
+    salesCustomers: number;
     products: number;
     bankStatusRows: number;
     warnings: number;
+    checklistItems: number;
+  };
+  scenario?: {
+    mainCompany?: BusinessPlanPreview["companies"][number];
+    purchasePlan?: BusinessPlanPreview["companies"][number];
+    salesPlan?: BusinessPlanPreview["companies"][number];
+    purchaseVendors: Array<{ name: string; role: "BUYER" | "SELLER" | "BOTH"; allocationPercent?: number; address?: string; email?: string }>;
+    salesCustomers: Array<{ name: string; role: "BUYER" | "SELLER" | "BOTH"; allocationPercent?: number; address?: string; email?: string; bank?: { bankName?: string; iban?: string; accountNumber?: string } }>;
+    salesAllocations: Array<{ name: string; role: "BUYER" | "SELLER" | "BOTH"; allocationPercent?: number; address?: string; email?: string }>;
+    partnerBanks: Array<{ companyName: string; bank: { bankName?: string; iban?: string; accountNumber?: string } }>;
   };
   companies: Array<{
     index: string;
     name: string;
     email?: string;
     address?: string;
+    productSpecification?: string;
+    priceRule?: string;
     customerRule?: string;
     vendorRule?: string;
     revenueTargetText?: string;
     revenueTargetMin?: number;
     revenueTargetMax?: number;
+    transactionPercent?: number;
+    transactionAmountMin?: number;
+    transactionAmountMax?: number;
     invoiceRuleText?: string;
     invoiceCountMin?: number;
     invoiceCountMax?: number;
@@ -191,6 +253,7 @@ type BusinessPlanPreview = {
     };
   }>;
   products: Array<{
+    sku: string;
     title: string;
     currency?: string;
     denomination?: number;
@@ -200,6 +263,18 @@ type BusinessPlanPreview = {
     sellingPrice?: number;
     profit?: number;
     marginPercent?: number;
+  }>;
+  fieldMappings: Array<{
+    source: "BUSINESS_PLAN" | "PRODUCT_PRICE";
+    sheetName?: string;
+    detected: boolean;
+    columns: Array<{ field: string; header?: string; status: "FOUND" | "MISSING" | "OPTIONAL" }>;
+  }>;
+  missingDataChecklist: Array<{
+    section: "COMPANY" | "VENDOR" | "CUSTOMER" | "PRODUCT" | "PLAN";
+    name: string;
+    missing: string[];
+    severity: "INFO" | "WARNING";
   }>;
   bankStatusRows: Array<{ companyName: string; owner?: string; bankStatus?: string }>;
   warnings: string[];
@@ -223,6 +298,21 @@ type BusinessPlanProductImportResult = {
     sellingPrice: number;
     status: "CREATED" | "UPDATED" | "SKIPPED";
     reason?: string;
+  }>;
+};
+
+type BusinessPlanScenarioImportResult = {
+  company: "CREATED" | "UPDATED" | "SKIPPED";
+  partnersCreated: number;
+  partnersUpdated: number;
+  turnoverTargetsCreated: number;
+  turnoverTargetsUpdated: number;
+  rulesSaved: number;
+  rows: Array<{
+    type: "COMPANY" | "VENDOR" | "CUSTOMER" | "TURNOVER_TARGET" | "BUSINESS_RULE";
+    name: string;
+    status: "CREATED" | "UPDATED" | "SAVED" | "SKIPPED";
+    detail?: string;
   }>;
 };
 
@@ -322,7 +412,7 @@ const flushCategoryOptions: FlushCategory[] = [
 
 const defaultFlushCategoryKeys = ["transactions", "communicationLogs", "generatedFiles", "applicationLogs"];
 
-type View = "overview" | "stock" | "ecommerce" | "workflow" | "invoices" | "settings";
+type View = "overview" | "stock" | "ecommerce" | "workflow" | "invoices" | "reports" | "settings";
 
 function money(value: string | number) {
   return `AED ${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -371,21 +461,31 @@ function mediaUrl(path?: string | null, cacheKey?: string | number | null) {
   const separator = path.includes("?") ? "&" : "?";
   const cacheSuffix = cacheKey ? `${separator}v=${encodeURIComponent(String(cacheKey))}` : "";
   if (/^https?:\/\//i.test(path)) return `${path}${cacheSuffix}`;
+  if (path.startsWith("/uploads/")) return `${path}${cacheSuffix}`;
   return `${apiUrl}${path}${cacheSuffix}`;
 }
 
 function CompanyLogoPreview({ company }: { company: Company }) {
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const logoSrc = mediaUrl(company.logoPath, `${company.logoPath}-${attempt}`);
   useEffect(() => {
     setFailed(false);
     setAttempt(0);
   }, [company.logoPath]);
+  useEffect(() => {
+    if (!failed || !company.logoPath) return undefined;
+    const retry = window.setTimeout(() => {
+      setFailed(false);
+      setAttempt((current) => current + 1);
+    }, 1200);
+    return () => window.clearTimeout(retry);
+  }, [company.logoPath, failed]);
 
   if (!company.logoPath || failed) return <Building2 size={24} />;
   return (
     <img
-      src={mediaUrl(company.logoPath, `${company.logoPath}-${attempt}`)}
+      src={logoSrc}
       alt={`${company.name} logo`}
       onError={() => {
         if (attempt < 3) {
@@ -418,21 +518,45 @@ function parseAgentInstructionDraft(instruction: string) {
   };
 }
 
+function messageSeverity(message: string): "info" | "warning" | "error" {
+  if (/\b(error|failed|missing|invalid|cannot|could not|not found|blocked|held)\b/i.test(message)) return "error";
+  if (/\b(warning|review|check|already|manual|waiting)\b/i.test(message)) return "warning";
+  return "info";
+}
+
+function messageTitle(message: string) {
+  const severity = messageSeverity(message);
+  return severity === "error" ? "Error" : severity === "warning" ? "Warning" : "Info";
+}
+
 function App() {
   const [token, setToken] = useState(localStorage.getItem("b2b-token") ?? "");
   const [email, setEmail] = useState("admin@example.com");
   const [password, setPassword] = useState("ChangeMe123!");
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [reports, setReports] = useState<ReportsData | null>(null);
+  const [reportMonth, setReportMonth] = useState(() => appDate().slice(0, 7));
+  const [reportCompanyId, setReportCompanyId] = useState("ALL");
+  const [reportCustomerId, setReportCustomerId] = useState("ALL");
+  const [reportVendorId, setReportVendorId] = useState("ALL");
+  const [reportProductId, setReportProductId] = useState("ALL");
   const [message, setMessage] = useState("");
   const [confirmationToast, setConfirmationToast] = useState<ConfirmationToast | null>(null);
+  const [typedConfirmation, setTypedConfirmation] = useState("");
   const [loading, setLoading] = useState(false);
   const [agentRunning, setAgentRunning] = useState(false);
   const [activeView, setActiveView] = useState<View>("overview");
   const [settingsTab, setSettingsTab] = useState<"company" | "businessImport" | "email" | "log" | "audit" | "systemLogs" | "maintenance">("company");
+  const [companyPartnerTab, setCompanyPartnerTab] = useState<"companies" | "customers" | "vendors">("companies");
   const [showCreateCompany, setShowCreateCompany] = useState(false);
   const [businessPlanFile, setBusinessPlanFile] = useState<File | null>(null);
+  const [businessPlanCompanyId, setBusinessPlanCompanyId] = useState("AUTO");
   const [businessPlanPreview, setBusinessPlanPreview] = useState<BusinessPlanPreview | null>(null);
   const [businessProductImportResult, setBusinessProductImportResult] = useState<BusinessPlanProductImportResult | null>(null);
+  const [businessScenarioImportResult, setBusinessScenarioImportResult] = useState<BusinessPlanScenarioImportResult | null>(null);
+  const [businessImportStatus, setBusinessImportStatus] = useState("Waiting for business plan file");
+  const [businessImportProgress, setBusinessImportProgress] = useState(0);
+  const [showBusinessImportProgress, setShowBusinessImportProgress] = useState(false);
   const [productPriceFile, setProductPriceFile] = useState<File | null>(null);
   const [productPricePreview, setProductPricePreview] = useState<BusinessPlanPreview | null>(null);
   const [productPriceImportResult, setProductPriceImportResult] = useState<BusinessPlanProductImportResult | null>(null);
@@ -452,6 +576,9 @@ function App() {
   const [stockCompanyId, setStockCompanyId] = useState("");
   const [stockItemId, setStockItemId] = useState("");
   const [stockQuantity, setStockQuantity] = useState("0");
+  const [planStockCompanyId, setPlanStockCompanyId] = useState("");
+  const [planStockMonth, setPlanStockMonth] = useState(() => appDate().slice(0, 7));
+  const [planStockStatus, setPlanStockStatus] = useState("");
   const [newSku, setNewSku] = useState("");
   const [newItemName, setNewItemName] = useState("");
   const [newItemUnit, setNewItemUnit] = useState("pcs");
@@ -505,6 +632,12 @@ function App() {
   const [agentProductMode, setAgentProductMode] = useState<"RANDOM" | "SELECTED">("RANDOM");
   const [agentAutoStart, setAgentAutoStart] = useState(true);
   const [agentAutoInvoice, setAgentAutoInvoice] = useState(true);
+  const [planAgentCompanyId, setPlanAgentCompanyId] = useState("");
+  const [planAgentMonth, setPlanAgentMonth] = useState(() => appDate().slice(0, 7));
+  const [planAgentDateFrom, setPlanAgentDateFrom] = useState(() => monthStartInputValue());
+  const [planAgentDateTo, setPlanAgentDateTo] = useState(() => monthEndInputValue());
+  const [planAgentLineCount, setPlanAgentLineCount] = useState("3");
+  const [planAgentStatus, setPlanAgentStatus] = useState("");
   const [showAdvancedWorkflow, setShowAdvancedWorkflow] = useState(false);
   const [editingTargetId, setEditingTargetId] = useState("");
   const [selectedInvoiceId, setSelectedInvoiceId] = useState("");
@@ -530,6 +663,8 @@ function App() {
   const [systemLogLevel, setSystemLogLevel] = useState("ERROR");
   const [systemLogs, setSystemLogs] = useState<SystemLogResponse | null>(null);
   const [flushResult, setFlushResult] = useState<FlushResult | null>(null);
+  const [databaseBackups, setDatabaseBackups] = useState<Array<{ fileName: string; bytes: number; createdAt: string }>>([]);
+  const [restoreBackupFile, setRestoreBackupFile] = useState("");
   const [selectedFlushCategories, setSelectedFlushCategories] = useState<string[]>(defaultFlushCategoryKeys);
   const [flushStatus, setFlushStatus] = useState("Waiting for category selection");
   const [flushProgress, setFlushProgress] = useState(0);
@@ -575,6 +710,7 @@ function App() {
         companies: nextSummary.companies ?? [],
         items: nextSummary.items ?? [],
         stock: nextSummary.stock ?? [],
+        stockMovementReport: nextSummary.stockMovementReport ?? [],
         targets: nextSummary.targets ?? [],
         invoices: nextSummary.invoices ?? [],
         emails: nextSummary.emails ?? [],
@@ -588,6 +724,19 @@ function App() {
     }
   }
 
+  async function loadReports() {
+    if (!token) return;
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (reportMonth) params.set("month", reportMonth);
+      if (reportCompanyId !== "ALL") params.set("companyId", reportCompanyId);
+      setReports(await request<ReportsData>(`/api/reports?${params.toString()}`));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function loadSystemLogs(level = systemLogLevel) {
     if (!token) return;
     setLoading(true);
@@ -596,6 +745,31 @@ function App() {
       setSystemLogs(await request<SystemLogResponse>(`/api/system-logs${query}`));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not load system logs");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function downloadSystemLogs() {
+    setLoading(true);
+    try {
+      const response = await fetch(`${apiUrl}/api/system-logs/download`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({ error: "Could not download logs" }));
+        throw new Error(data.error ?? "Could not download logs");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = response.headers.get("content-disposition")?.match(/filename=\"?([^"]+)\"?/)?.[1] ?? "b2b-logs.log";
+      link.click();
+      URL.revokeObjectURL(url);
+      setMessage("System logs downloaded.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not download logs");
     } finally {
       setLoading(false);
     }
@@ -629,9 +803,12 @@ function App() {
     const defaultCompanyId = portalCompany?.id || summary.companies[0]?.id || "";
     if (portalCompany) {
       setCompanyScopeId(portalCompany.id);
+      setReportCompanyId(portalCompany.id);
+      setBusinessPlanCompanyId(portalCompany.id);
     }
     setProfileCompanyId((current) => portalCompany?.id || current || defaultCompanyId);
     setStockCompanyId((current) => portalCompany?.id || current || defaultCompanyId);
+    setPlanStockCompanyId((current) => portalCompany?.id || current || defaultCompanyId);
     setStockItemId((current) => current || summary.items[0]?.id || "");
     setBulkCompanyId((current) => portalCompany?.id || current || defaultCompanyId);
     setInvoiceCompanyId((current) => portalCompany?.id || current || defaultCompanyId);
@@ -640,6 +817,7 @@ function App() {
     setDailyCompanyId((current) => portalCompany?.id || current || defaultCompanyId);
     setDailyCounterpartyId((current) => current || summary.companies.find((company) => company.id !== (portalCompany?.id || defaultCompanyId))?.id || "");
     setWorkflowCompanyId((current) => portalCompany?.id || current || defaultCompanyId);
+    setPlanAgentCompanyId((current) => portalCompany?.id || current || defaultCompanyId);
     setWorkflowCounterpartyId((current) => current || summary.companies.find((company) => company.id !== (portalCompany?.id || defaultCompanyId))?.id || "");
     setTargetItemId((current) => current || summary.items[0]?.id || "");
     setSelectedInvoiceId((current) => current || summary.invoices[0]?.id || "");
@@ -680,6 +858,11 @@ function App() {
     if (activeView !== "invoices" || !selectedInvoiceId) return;
     loadInvoice(selectedInvoiceId).catch((error) => setMessage(error.message));
   }, [activeView, selectedInvoiceId]);
+
+  useEffect(() => {
+    if (activeView !== "reports") return;
+    loadReports().catch((error) => setMessage(error.message));
+  }, [activeView, reportMonth, reportCompanyId, token]);
 
   async function handleLogin(event: React.FormEvent) {
     event.preventDefault();
@@ -882,6 +1065,9 @@ function App() {
       setMessage("Select an Excel file first.");
       return;
     }
+    setShowBusinessImportProgress(true);
+    setBusinessImportStatus("Reading business plan workbook...");
+    setBusinessImportProgress(30);
     setLoading(true);
     try {
       const response = await fetch(`${apiUrl}/api/business-plan-import/preview`, {
@@ -896,8 +1082,13 @@ function App() {
       if (!response.ok) throw new Error(data.error ?? "Could not preview business plan");
       setBusinessPlanPreview(data);
       setBusinessProductImportResult(null);
+      setBusinessScenarioImportResult(null);
+      setBusinessImportProgress(100);
+      setBusinessImportStatus(`Preview ready: ${data.counts.companies} companies, ${data.counts.purchaseVendors} vendors, ${data.counts.salesCustomers} customers.`);
       setMessage(`Business plan preview ready: ${data.counts.companies} companies and ${data.counts.products} products detected.`);
     } catch (error) {
+      setBusinessImportProgress(0);
+      setBusinessImportStatus("Preview failed.");
       setMessage(error instanceof Error ? error.message : "Could not preview business plan");
     } finally {
       setLoading(false);
@@ -986,6 +1177,50 @@ function App() {
     });
   }
 
+  async function importBusinessPlanScenario() {
+    if (!businessPlanPreview) {
+      setMessage("Preview the Excel file before importing the business plan.");
+      return;
+    }
+    setConfirmationToast({
+      title: "Import business plan scenario?",
+      message: `${selectedBusinessPlanCompany ? `This will import the plan under ${selectedBusinessPlanCompany.name}` : "This will use the main company detected from Excel"}. It will create/update ${businessPlanPreview.counts.purchaseVendors} purchase vendors, ${businessPlanPreview.counts.salesCustomers} sales customers, turnover targets, and allocation rules.`,
+      confirmLabel: "Import Scenario",
+      onConfirm: async () => {
+        if (!businessPlanFile) return;
+        setShowBusinessImportProgress(true);
+        setBusinessImportStatus("Importing companies, partners, turnover targets, and allocation rules...");
+        setBusinessImportProgress(65);
+        setLoading(true);
+        try {
+          const importUrl = new URL(`${apiUrl}/api/business-plan-import/import-scenario`);
+          if (businessPlanCompanyId !== "AUTO") importUrl.searchParams.set("companyId", businessPlanCompanyId);
+          const response = await fetch(importUrl.toString(), {
+            method: "POST",
+            headers: {
+              "Content-Type": businessPlanFile.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: businessPlanFile,
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error ?? "Could not import business plan scenario");
+          setBusinessScenarioImportResult(data);
+          setBusinessImportProgress(100);
+          setBusinessImportStatus(`Import complete: ${data.partnersCreated} partners created, ${data.partnersUpdated} partners updated, ${data.rulesSaved} rule set saved.`);
+          setMessage(`Business plan imported: ${data.partnersCreated} partners created, ${data.partnersUpdated} partners updated.`);
+          await loadSummary();
+        } catch (error) {
+          setBusinessImportProgress(0);
+          setBusinessImportStatus("Import failed.");
+          setMessage(error instanceof Error ? error.message : "Could not import business plan scenario");
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
+  }
+
   async function previewStockProductPrices(event: React.FormEvent) {
     event.preventDefault();
     setProductPriceImportResult(null);
@@ -1053,6 +1288,7 @@ function App() {
       message: `This will clear: ${selectedOptions.map((option) => option.title).join(", ")}. Unselected categories will remain.`,
       confirmLabel: "Flush Selected",
       danger: selectedOptions.some((option) => option.dangerous),
+      typedPhrase: "FLUSH DATA",
       onConfirm: async () => {
         setFlushResult(null);
         setFlushStatus(`Deleting ${selectedOptions.length} selected categories...`);
@@ -1082,12 +1318,67 @@ function App() {
     });
   }
 
+  async function loadDatabaseBackups() {
+    setLoading(true);
+    try {
+      const result = await request<{ backups: Array<{ fileName: string; bytes: number; createdAt: string }> }>("/api/maintenance/backups");
+      setDatabaseBackups(result.backups);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not load backups");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function createDatabaseBackup() {
+    setLoading(true);
+    try {
+      const result = await request<{ fileName: string }>("/api/maintenance/backups", { method: "POST" });
+      setMessage(`Database backup created: ${result.fileName}`);
+      await loadDatabaseBackups();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not create database backup");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function restoreDatabaseBackup() {
+    if (!restoreBackupFile) {
+      setMessage("Select a backup before restore.");
+      return;
+    }
+    setConfirmationToast({
+      title: "Restore database?",
+      message: `Restore from ${restoreBackupFile}? Current database will be backed up first, then replaced.`,
+      confirmLabel: "Restore",
+      danger: true,
+      typedPhrase: "RESTORE DATABASE",
+      onConfirm: async () => {
+        setLoading(true);
+        try {
+          await request("/api/maintenance/restore", {
+            method: "POST",
+            body: JSON.stringify({ fileName: restoreBackupFile, typedConfirmation: "RESTORE DATABASE" }),
+          });
+          setMessage("Database restored. Restart the app service to reload all connections.");
+          await loadSummary();
+        } catch (error) {
+          setMessage(error instanceof Error ? error.message : "Could not restore database");
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
+  }
+
   async function deleteCompany(company: Company) {
     setConfirmationToast({
       title: "Delete company?",
       message: `Delete ${company.name}? This is only allowed when the company has no transaction history.`,
       confirmLabel: "Delete",
       danger: true,
+      typedPhrase: company.name,
       onConfirm: async () => {
         setLoading(true);
         try {
@@ -1105,8 +1396,13 @@ function App() {
 
   async function confirmToastAction() {
     if (!confirmationToast) return;
+    if (confirmationToast.typedPhrase && typedConfirmation !== confirmationToast.typedPhrase) {
+      setMessage(`Type ${confirmationToast.typedPhrase} to confirm this action.`);
+      return;
+    }
     const action = confirmationToast.onConfirm;
     setConfirmationToast(null);
+    setTypedConfirmation("");
     await action();
   }
 
@@ -1114,6 +1410,7 @@ function App() {
     if (confirmationToast) {
       setMessage("Action cancelled.");
       setConfirmationToast(null);
+      setTypedConfirmation("");
     }
   }
 
@@ -1465,6 +1762,51 @@ function App() {
     }
   }
 
+  async function runImportedBusinessPlanAgent(event: React.FormEvent) {
+    event.preventDefault();
+    if (!planAgentCompanyId || !planAgentMonth) {
+      setMessage("Select company and month before running business plan agent.");
+      return;
+    }
+    const company = summary?.companies.find((entry) => entry.id === planAgentCompanyId);
+    setConfirmationToast({
+      title: "Run business plan agent?",
+      message: `Execute imported plan rules for ${company?.name ?? "selected company"}: vendor purchases, received invoices, stock update, and customer sales invoices?`,
+      confirmLabel: "Run Plan Agent",
+      onConfirm: async () => {
+        setLoading(true);
+        setAgentRunning(true);
+        setPlanAgentStatus("Running imported business plan rules...");
+        try {
+          const result = await request<{
+            purchase: { invoices: number; targets: number };
+            sales: { invoices: number; targets: number };
+          }>("/api/workflow/business-plan-agent/run", {
+            method: "POST",
+            body: JSON.stringify({
+              companyId: planAgentCompanyId,
+              month: planAgentMonth,
+              dateFrom: planAgentDateFrom || undefined,
+              dateTo: planAgentDateTo || undefined,
+              lineCount: Number(planAgentLineCount),
+            }),
+          });
+          const status = `Completed ${result.purchase.invoices} purchase invoices and ${result.sales.invoices} sales invoices.`;
+          setPlanAgentStatus(status);
+          setMessage(status);
+          await loadSummary();
+        } catch (error) {
+          const text = error instanceof Error ? error.message : "Business plan agent failed";
+          setPlanAgentStatus(text);
+          setMessage(text);
+        } finally {
+          setAgentRunning(false);
+          setLoading(false);
+        }
+      },
+    });
+  }
+
   function updateAgentInstruction(value: string) {
     setAgentInstruction(value);
     const parsed = parseAgentInstructionDraft(value);
@@ -1576,42 +1918,66 @@ function App() {
   }
 
   async function runWorkflow(targetId: string) {
-    setLoading(true);
-    try {
-      await request(`/api/workflow/targets/${targetId}/run`, { method: "POST" });
-      setMessage("Buyer PO sent to vendor. Vendor can now create invoice from their portal.");
-      await loadSummary();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Workflow failed");
-    } finally {
-      setLoading(false);
-    }
+    const target = summary?.targets.find((entry) => entry.id === targetId);
+    setConfirmationToast({
+      title: "Send purchase order?",
+      message: target ? `Send PO from ${target.buyerCompany.name} to ${target.sellerCompany.name}?` : "Send this purchase order to the vendor?",
+      confirmLabel: "Send PO",
+      onConfirm: async () => {
+        setLoading(true);
+        try {
+          await request(`/api/workflow/targets/${targetId}/run`, { method: "POST" });
+          setMessage("Buyer PO sent to vendor. Vendor can now create invoice from their portal.");
+          await loadSummary();
+        } catch (error) {
+          setMessage(error instanceof Error ? error.message : "Workflow failed");
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
   }
 
   async function createVendorInvoice(targetId: string) {
-    setLoading(true);
-    try {
-      await request(`/api/workflow/targets/${targetId}/vendor-invoice`, { method: "POST" });
-      setMessage("Vendor invoice created and emailed back to buyer.");
-      await loadSummary();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not create vendor invoice");
-    } finally {
-      setLoading(false);
-    }
+    const target = summary?.targets.find((entry) => entry.id === targetId);
+    setConfirmationToast({
+      title: "Create vendor invoice?",
+      message: target ? `Create invoice from ${target.sellerCompany.name} back to ${target.buyerCompany.name}?` : "Create and email the vendor invoice?",
+      confirmLabel: "Create Invoice",
+      onConfirm: async () => {
+        setLoading(true);
+        try {
+          await request(`/api/workflow/targets/${targetId}/vendor-invoice`, { method: "POST" });
+          setMessage("Vendor invoice created and emailed back to buyer.");
+          await loadSummary();
+        } catch (error) {
+          setMessage(error instanceof Error ? error.message : "Could not create vendor invoice");
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
   }
 
   async function stopWorkflow(targetId: string) {
-    setLoading(true);
-    try {
-      await request(`/api/workflow/targets/${targetId}/stop`, { method: "POST" });
-      setMessage("Target stopped before workflow started.");
-      await loadSummary();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not stop target");
-    } finally {
-      setLoading(false);
-    }
+    setConfirmationToast({
+      title: "Stop workflow?",
+      message: "Stop this open target before the agent sends the PO?",
+      confirmLabel: "Stop",
+      danger: true,
+      onConfirm: async () => {
+        setLoading(true);
+        try {
+          await request(`/api/workflow/targets/${targetId}/stop`, { method: "POST" });
+          setMessage("Target stopped before workflow started.");
+          await loadSummary();
+        } catch (error) {
+          setMessage(error instanceof Error ? error.message : "Could not stop target");
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
   }
 
   async function saveStock(event: React.FormEvent) {
@@ -1641,6 +2007,46 @@ function App() {
     }
   }
 
+  async function generatePlanStock(event: React.FormEvent) {
+    event.preventDefault();
+    const company = summary?.companies.find((entry) => entry.id === planStockCompanyId);
+    const target = summary?.turnoverTargets.find((entry) =>
+      entry.companyId === planStockCompanyId && entry.type === "PURCHASE" && entry.month === planStockMonth
+    );
+    if (!planStockCompanyId || !planStockMonth) {
+      setMessage("Select company and month before generating plan stock.");
+      return;
+    }
+    if (!target) {
+      setMessage("No purchase turnover target found for this company and month.");
+      return;
+    }
+    setConfirmationToast({
+      title: "Generate plan stock?",
+      message: `Create stock quantity for ${company?.name ?? "selected company"} from ${planStockMonth} purchase target ${money(target.amount)} using product buying prices?`,
+      confirmLabel: "Generate Stock",
+      onConfirm: async () => {
+        setLoading(true);
+        setPlanStockStatus("Generating stock quantity and purchase value from business plan...");
+        try {
+          const result = await request<{ productCount: number; totalQuantity: number; generatedPurchaseValue: string }>("/api/catalog/stock/from-business-plan", {
+            method: "POST",
+            body: JSON.stringify({ companyId: planStockCompanyId, month: planStockMonth }),
+          });
+          setPlanStockStatus(`Generated ${result.totalQuantity} quantity across ${result.productCount} products. Purchase value: ${money(result.generatedPurchaseValue)}.`);
+          setMessage("Business plan stock generated.");
+          await loadSummary();
+        } catch (error) {
+          const text = error instanceof Error ? error.message : "Could not generate plan stock";
+          setPlanStockStatus(text);
+          setMessage(text);
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
+  }
+
   async function buyEcommerceProduct(stock: Stock) {
     const buyerCompanyId = companyScopeId !== "ALL"
       ? companyScopeId
@@ -1650,37 +2056,51 @@ function App() {
       return;
     }
 
-    setLoading(true);
-    try {
-      await request("/api/ecommerce/orders", {
-        method: "POST",
-        body: JSON.stringify({
-          buyerCompanyId,
-          sellerCompanyId: stock.company.id,
-          itemId: stock.item.id,
-          quantity: 1,
-        }),
-      });
-      setMessage(`${stock.item.sku} bought and added to delivery tracking.`);
-      await loadSummary();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not buy product");
-    } finally {
-      setLoading(false);
-    }
+    setConfirmationToast({
+      title: "Buy product?",
+      message: `Create one order for ${stock.item.sku} from ${stock.company.name}?`,
+      confirmLabel: "Buy",
+      onConfirm: async () => {
+        setLoading(true);
+        try {
+          await request("/api/ecommerce/orders", {
+            method: "POST",
+            body: JSON.stringify({
+              buyerCompanyId,
+              sellerCompanyId: stock.company.id,
+              itemId: stock.item.id,
+              quantity: 1,
+            }),
+          });
+          setMessage(`${stock.item.sku} bought and added to delivery tracking.`);
+          await loadSummary();
+        } catch (error) {
+          setMessage(error instanceof Error ? error.message : "Could not buy product");
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
   }
 
   async function markEcommerceDelivered(orderId: string) {
-    setLoading(true);
-    try {
-      await request(`/api/ecommerce/orders/${orderId}/deliver`, { method: "PATCH" });
-      setMessage("Delivery marked complete.");
-      await loadSummary();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not update delivery");
-    } finally {
-      setLoading(false);
-    }
+    setConfirmationToast({
+      title: "Mark delivered?",
+      message: "Mark this ecommerce order as delivered?",
+      confirmLabel: "Mark Delivered",
+      onConfirm: async () => {
+        setLoading(true);
+        try {
+          await request(`/api/ecommerce/orders/${orderId}/deliver`, { method: "PATCH" });
+          setMessage("Delivery marked complete.");
+          await loadSummary();
+        } catch (error) {
+          setMessage(error instanceof Error ? error.message : "Could not update delivery");
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
   }
 
   async function createStockItem(event: React.FormEvent) {
@@ -1723,19 +2143,27 @@ function App() {
       return;
     }
 
-    setLoading(true);
-    try {
-      const result = await request<{ imported: number }>("/api/catalog/stock/bulk", {
-        method: "POST",
-        body: JSON.stringify({ companyId: bulkCompanyId, mode: bulkMode, csvText: bulkCsvText }),
-      });
-      setMessage(`Bulk stock uploaded: ${result.imported} rows.`);
-      await loadSummary();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not upload bulk stock");
-    } finally {
-      setLoading(false);
-    }
+    const rowCount = bulkCsvText.trim().split(/\r?\n/).filter(Boolean).length;
+    setConfirmationToast({
+      title: "Upload stock rows?",
+      message: `Import ${rowCount} stock rows using ${bulkMode.toLowerCase()} mode?`,
+      confirmLabel: "Upload Stock",
+      onConfirm: async () => {
+        setLoading(true);
+        try {
+          const result = await request<{ imported: number }>("/api/catalog/stock/bulk", {
+            method: "POST",
+            body: JSON.stringify({ companyId: bulkCompanyId, mode: bulkMode, csvText: bulkCsvText }),
+          });
+          setMessage(`Bulk stock uploaded: ${result.imported} rows.`);
+          await loadSummary();
+        } catch (error) {
+          setMessage(error instanceof Error ? error.message : "Could not upload bulk stock");
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
   }
 
   async function parsePurchaseInvoice(event: React.FormEvent) {
@@ -1745,19 +2173,26 @@ function App() {
       return;
     }
 
-    setLoading(true);
-    try {
-      const result = await request<{ imported: number }>("/api/catalog/stock/from-purchase-invoice", {
-        method: "POST",
-        body: JSON.stringify({ companyId: invoiceCompanyId, invoiceText: purchaseInvoiceText }),
-      });
-      setMessage(`Purchase invoice parsed: ${result.imported} stock lines added.`);
-      await loadSummary();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not parse purchase invoice");
-    } finally {
-      setLoading(false);
-    }
+    setConfirmationToast({
+      title: "Insert stock from invoice?",
+      message: "Parse this purchase invoice text and add the detected lines into stock?",
+      confirmLabel: "Insert Stock",
+      onConfirm: async () => {
+        setLoading(true);
+        try {
+          const result = await request<{ imported: number }>("/api/catalog/stock/from-purchase-invoice", {
+            method: "POST",
+            body: JSON.stringify({ companyId: invoiceCompanyId, invoiceText: purchaseInvoiceText }),
+          });
+          setMessage(`Purchase invoice parsed: ${result.imported} stock lines added.`);
+          await loadSummary();
+        } catch (error) {
+          setMessage(error instanceof Error ? error.message : "Could not parse purchase invoice");
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
   }
 
   async function loadInvoice(invoiceId: string) {
@@ -1770,16 +2205,23 @@ function App() {
   }
 
   async function sendInvoice(invoiceId: string) {
-    setLoading(true);
-    try {
-      await request(`/api/invoices/${invoiceId}/send`, { method: "POST" });
-      setMessage("Invoice email logged as sent.");
-      await loadSummary();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not send invoice");
-    } finally {
-      setLoading(false);
-    }
+    setConfirmationToast({
+      title: "Send invoice email?",
+      message: "Send this invoice by email using the configured company email settings?",
+      confirmLabel: "Send Invoice",
+      onConfirm: async () => {
+        setLoading(true);
+        try {
+          await request(`/api/invoices/${invoiceId}/send`, { method: "POST" });
+          setMessage("Invoice email logged as sent.");
+          await loadSummary();
+        } catch (error) {
+          setMessage(error instanceof Error ? error.message : "Could not send invoice");
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
   }
 
   async function downloadInvoicePdf(invoiceId: string) {
@@ -1920,16 +2362,23 @@ function App() {
   }
 
   async function testEmailIntegration(companyId: string) {
-    setLoading(true);
-    try {
-      await request(`/api/email-integrations/${companyId}/test`, { method: "POST" });
-      setMessage("Email integration test logged.");
-      await loadSummary();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not test email integration");
-    } finally {
-      setLoading(false);
-    }
+    setConfirmationToast({
+      title: "Test email integration?",
+      message: "Run a test against this company's email configuration and log the result?",
+      confirmLabel: "Run Test",
+      onConfirm: async () => {
+        setLoading(true);
+        try {
+          await request(`/api/email-integrations/${companyId}/test`, { method: "POST" });
+          setMessage("Email integration test logged.");
+          await loadSummary();
+        } catch (error) {
+          setMessage(error instanceof Error ? error.message : "Could not test email integration");
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
   }
 
   const activeCompanies = (summary?.companies ?? []).filter((company) => company.active !== false);
@@ -1941,6 +2390,9 @@ function App() {
   const scopedStock = companyScopeId === "ALL"
     ? summary?.stock ?? []
     : (summary?.stock ?? []).filter((stock) => stock.company.id === companyScopeId);
+  const scopedStockMovementReport = companyScopeId === "ALL"
+    ? summary?.stockMovementReport ?? []
+    : (summary?.stockMovementReport ?? []).filter((row) => row.companyId === companyScopeId);
   const productMasterRows = summary?.items ?? [];
   const stockItemIds = new Set(scopedStock.map((stock) => stock.item.id));
   const ecommerceProductRows = (summary?.stock ?? [])
@@ -1973,6 +2425,29 @@ function App() {
   const scopedEcommerceOrders = companyScopeId === "ALL"
     ? summary?.ecommerceOrders ?? []
     : (summary?.ecommerceOrders ?? []).filter((order) => order.buyerCompany.id === companyScopeId || order.sellerCompany.id === companyScopeId);
+  const dashboardTargetValue = scopedTurnoverTargets.reduce((sum, target) => sum + Number(target.amount), 0);
+  const dashboardPurchaseValue = scopedStockMovementReport.reduce((sum, row) => sum + Number(row.purchaseValue), 0);
+  const dashboardSalesValue = scopedStockMovementReport.reduce((sum, row) => sum + Number(row.salesValue), 0);
+  const dashboardProfitValue = scopedStockMovementReport.reduce((sum, row) => sum + Number(row.salesValue) - Number(row.soldQuantity) * Number(row.buyingPrice), 0);
+  const dashboardStockValue = scopedStockMovementReport.reduce((sum, row) => sum + Number(row.balanceSellingValue), 0);
+  const filteredPurchaseVendorWise = (reports?.purchase.vendorWise ?? []).filter((row) => reportVendorId === "ALL" || row.vendorId === reportVendorId);
+  const filteredPurchaseProductWise = (reports?.purchase.productWise ?? []).filter((row) => reportProductId === "ALL" || row.itemId === reportProductId);
+  const filteredPurchaseInvoiceWise = (reports?.purchase.invoiceWise ?? []).filter((row) =>
+    (reportVendorId === "ALL" || row.vendorName === (summary?.companies ?? []).find((company) => company.id === reportVendorId)?.name)
+    && (reportProductId === "ALL" || filteredPurchaseProductWise.length > 0)
+  );
+  const filteredSalesCustomerWise = (reports?.sales.customerWise ?? []).filter((row) => reportCustomerId === "ALL" || row.customerId === reportCustomerId);
+  const filteredSalesProductWise = (reports?.sales.productWise ?? []).filter((row) => reportProductId === "ALL" || row.itemId === reportProductId);
+  const filteredSalesInvoiceWise = (reports?.sales.invoiceWise ?? []).filter((row) =>
+    (reportCustomerId === "ALL" || row.customerName === (summary?.companies ?? []).find((company) => company.id === reportCustomerId)?.name)
+    && (reportProductId === "ALL" || filteredSalesProductWise.length > 0)
+  );
+  const filteredProfitRows = (reports?.profit.rows ?? []).filter((row) =>
+    reportProductId === "ALL" || (summary?.items ?? []).find((item) => item.id === reportProductId)?.sku === row.sku
+  );
+  const filteredStockRows = (reports?.stock.rows ?? []).filter((row) =>
+    reportProductId === "ALL" || (summary?.items ?? []).find((item) => item.id === reportProductId)?.sku === row.sku
+  );
   const activePortalLinks: Array<{ href: string; label: string }> = [];
   const fallbackPortalLinks = [
     { href: "/dealz", label: "Dealz" },
@@ -1988,7 +2463,20 @@ function App() {
     if (link && !activePortalLinks.some((item) => item.href === link.href)) activePortalLinks.push(link);
   }
   const sidebarPortalLinks = summary ? activePortalLinks : fallbackPortalLinks;
+  const hierarchyCompanies = isCompanyPortal
+    ? []
+    : activeCompanies.filter((company) => !company.managedByCompanyId);
+  const hierarchyChildrenByCompany = new Map<string, Company[]>();
+  for (const company of activeCompanies) {
+    if (!company.managedByCompanyId) continue;
+    const children = hierarchyChildrenByCompany.get(company.managedByCompanyId) ?? [];
+    children.push(company);
+    hierarchyChildrenByCompany.set(company.managedByCompanyId, children);
+  }
   const visibleCompanyOptions = isCompanyPortal ? scopedCompanies : activeCompanies;
+  const businessPlanOwnerOptions = visibleCompanyOptions.filter((company) => !company.managedByCompanyId);
+  const businessPlanCompanyOptions = businessPlanOwnerOptions.length ? businessPlanOwnerOptions : visibleCompanyOptions;
+  const selectedBusinessPlanCompany = activeCompanies.find((company) => company.id === businessPlanCompanyId);
   const partnerCompanyOptions = portalOwnerCompany
     ? activeCompanies.filter((company) => isPartnerForCompany(company, portalOwnerCompany.id))
     : activeCompanies;
@@ -1997,6 +2485,11 @@ function App() {
   const settingsCompanyOptions = portalOwnerCompany
     ? (summary?.companies ?? []).filter((company) => isPartnerForCompany(company, portalOwnerCompany.id))
     : summary?.companies ?? [];
+  const settingsCompaniesForTab = companyPartnerTab === "companies"
+    ? settingsCompanyOptions.filter((company) => !company.managedByCompanyId)
+    : companyPartnerTab === "customers"
+      ? settingsCompanyOptions.filter(canBeCustomer)
+      : settingsCompanyOptions.filter(canBeVendor);
   const workflowSellerId = workflowDirection === "PURCHASE" ? workflowCounterpartyId : workflowCompanyId;
   const workflowProductOptions = (summary?.items ?? []).map((item) => {
     const stock = (summary?.stock ?? []).find((entry) => entry.company.id === workflowSellerId && entry.item.id === item.id);
@@ -2062,6 +2555,7 @@ function App() {
           <NavButton icon={<ShoppingCart size={18} />} label="Ecom Products" view="ecommerce" activeView={activeView} onSelect={setActiveView} />
           <NavButton icon={<Play size={18} />} label="Workflow" view="workflow" activeView={activeView} onSelect={setActiveView} />
           <NavButton icon={<FileText size={18} />} label="Invoices" view="invoices" activeView={activeView} onSelect={setActiveView} />
+          <NavButton icon={<ShieldCheck size={18} />} label="Reports" view="reports" activeView={activeView} onSelect={setActiveView} />
           <NavButton icon={<Settings size={18} />} label="Settings" view="settings" activeView={activeView} onSelect={setActiveView} />
         </nav>
       </aside>
@@ -2083,26 +2577,33 @@ function App() {
                 </select>
               </label>
             )}
-            <button onClick={loadSummary} disabled={loading}><RefreshCcw size={17} /> Refresh</button>
-            <button onClick={() => { localStorage.removeItem("b2b-token"); setToken(""); }}>Logout</button>
+            <button type="button" onClick={loadSummary} disabled={loading}><RefreshCcw size={17} /> Refresh</button>
+            <button type="button" onClick={() => { localStorage.removeItem("b2b-token"); setToken(""); }}>Logout</button>
           </div>
         </header>
 
-        {message && <div className="banner">{message}</div>}
+        {message && <div className={`banner ${messageSeverity(message)}`}><strong>{messageTitle(message)}</strong><span>{message}</span></div>}
         {confirmationToast && (
           <div className="toast-overlay" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
             <div className="toast-confirm">
               <div>
                 <strong id="confirm-title">{confirmationToast.title}</strong>
                 <span>{confirmationToast.message}</span>
+                {confirmationToast.typedPhrase && (
+                  <label className="typed-confirmation">
+                    Type {confirmationToast.typedPhrase}
+                    <input value={typedConfirmation} onChange={(event) => setTypedConfirmation(event.target.value)} />
+                  </label>
+                )}
               </div>
               <div className="toast-actions">
                 <button
                   type="button"
                   className={confirmationToast.danger ? "danger-button" : undefined}
-                  disabled={loading}
+                  disabled={loading || Boolean(confirmationToast.typedPhrase && typedConfirmation !== confirmationToast.typedPhrase)}
                   onClick={confirmToastAction}
                 >
+                  {loading && <span className="button-spinner" />}
                   {confirmationToast.confirmLabel}
                 </button>
                 <button type="button" className="secondary-button" disabled={loading} onClick={cancelToastAction}>
@@ -2116,12 +2617,12 @@ function App() {
         {activeView === "overview" && (
           <>
             <section className="metrics">
-              <Metric label="Companies" value={companyScopeId === "ALL" ? summary?.counts.companies ?? 0 : 1} />
-              <Metric label="Items" value={summary?.counts.items ?? 0} />
-              <Metric label="Targets" value={scopedTargets.length} />
+              <Metric label="Target Plan" value={money(dashboardTargetValue)} />
+              <Metric label="Purchase" value={money(dashboardPurchaseValue)} />
+              <Metric label="Sales" value={money(dashboardSalesValue)} />
+              <Metric label="Profit" value={money(dashboardProfitValue)} />
+              <Metric label="Stock Value" value={money(dashboardStockValue)} />
               <Metric label="Invoices" value={scopedInvoices.length} />
-              <Metric label="Invoice Value" value={money(scopedInvoiceTotal)} />
-              <Metric label="VAT 5%" value={money(scopedVatTotal)} />
             </section>
 
             <section className="split">
@@ -2235,6 +2736,49 @@ function App() {
 
             {settingsTab === "company" && (
               <div className="company-card-list">
+                {!!hierarchyCompanies.length && (
+                  <div className="hierarchy-nav settings-hierarchy-nav">
+                    <div className="hierarchy-title">
+                      <span>Company Tree</span>
+                      <button type="button" onClick={() => setCompanyScopeId("ALL")} className={companyScopeId === "ALL" ? "active-scope" : ""}>All</button>
+                    </div>
+                    <div className="settings-hierarchy-grid">
+                      {hierarchyCompanies.map((company) => {
+                        const children = hierarchyChildrenByCompany.get(company.id) ?? [];
+                        return (
+                          <div className="hierarchy-group" key={company.id}>
+                            <button
+                              type="button"
+                              className={companyScopeId === company.id ? "hierarchy-company active" : "hierarchy-company"}
+                              onClick={() => setCompanyScopeId(company.id)}
+                              title={company.legalName}
+                            >
+                              <Building2 size={15} />
+                              <span>{company.name}</span>
+                              <small>{children.length} linked</small>
+                            </button>
+                            {!!children.length && (
+                              <div className="hierarchy-children">
+                                {children.map((child) => (
+                                  <button
+                                    type="button"
+                                    key={child.id}
+                                    className={companyScopeId === child.id ? "hierarchy-child active" : "hierarchy-child"}
+                                    onClick={() => setCompanyScopeId(child.id)}
+                                    title={`${child.legalName} - ${roleLabel(child.role)}`}
+                                  >
+                                    <span>{child.name}</span>
+                                    <small>{roleLabel(child.role)}</small>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 <div className="company-list-toolbar">
                   <div>
                     <strong>Companies</strong>
@@ -2338,41 +2882,55 @@ function App() {
                     </div>
                   </form>
                 )}
-                <div className="partner-list-grid">
-                  <div className="partner-list-card">
-                    <div className="table-section-title">
-                      <strong>Customer List</strong>
-                      <span>{settingsCompanyOptions.filter(canBeCustomer).length} customers</span>
-                    </div>
-                    <div className="table">
-                      {settingsCompanyOptions.filter(canBeCustomer).map((company) => (
-                        <div className="row" key={`customer-${company.id}`}>
-                          <span>{company.name}</span>
-                          <span>{company.managedByCompany ? `Under ${company.managedByCompany.name}` : "Main company"}</span>
-                          <span className={`status-badge ${company.active === false ? "stopped" : "completed"}`}>{company.active === false ? "Inactive" : "Active"}</span>
-                        </div>
-                      ))}
-                      {!settingsCompanyOptions.filter(canBeCustomer).length && <div className="empty-state">No customers onboarded yet.</div>}
-                    </div>
+                <div className="partner-list-card">
+                  <div className="partner-list-tabs">
+                    <button
+                      type="button"
+                      className={companyPartnerTab === "companies" ? "secondary-button active-tab" : "secondary-button"}
+                      onClick={() => setCompanyPartnerTab("companies")}
+                    >
+                      <Building2 size={17} /> Companies
+                      <span>{settingsCompanyOptions.filter((company) => !company.managedByCompanyId).length}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={companyPartnerTab === "customers" ? "secondary-button active-tab" : "secondary-button"}
+                      onClick={() => setCompanyPartnerTab("customers")}
+                    >
+                      <Building2 size={17} /> Customers
+                      <span>{settingsCompanyOptions.filter(canBeCustomer).length}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={companyPartnerTab === "vendors" ? "secondary-button active-tab" : "secondary-button"}
+                      onClick={() => setCompanyPartnerTab("vendors")}
+                    >
+                      <Building2 size={17} /> Vendors
+                      <span>{settingsCompanyOptions.filter(canBeVendor).length}</span>
+                    </button>
                   </div>
-                  <div className="partner-list-card">
-                    <div className="table-section-title">
-                      <strong>Vendor List</strong>
-                      <span>{settingsCompanyOptions.filter(canBeVendor).length} vendors</span>
-                    </div>
-                    <div className="table">
-                      {settingsCompanyOptions.filter(canBeVendor).map((company) => (
-                        <div className="row" key={`vendor-${company.id}`}>
-                          <span>{company.name}</span>
-                          <span>{company.managedByCompany ? `Under ${company.managedByCompany.name}` : "Main company"}</span>
-                          <span className={`status-badge ${company.active === false ? "stopped" : "completed"}`}>{company.active === false ? "Inactive" : "Active"}</span>
+                  <div className="partner-list-content">
+                    {settingsCompaniesForTab.map((company) => (
+                      <div className="partner-list-row" key={`${companyPartnerTab}-${company.id}`}>
+                        <div className="company-logo-preview partner-logo">
+                          <CompanyLogoPreview company={company} />
                         </div>
-                      ))}
-                      {!settingsCompanyOptions.filter(canBeVendor).length && <div className="empty-state">No vendors onboarded yet.</div>}
-                    </div>
+                        <div>
+                          <strong>{company.name}</strong>
+                          <span>{company.legalName}</span>
+                          <small>{company.email}</small>
+                        </div>
+                        <span>{company.managedByCompany ? `Under ${company.managedByCompany.name}` : "Main company"}</span>
+                        <span className="status-badge open">{roleLabel(company.role)}</span>
+                        <span className={`status-badge ${company.active === false ? "stopped" : "completed"}`}>{company.active === false ? "Inactive" : "Active"}</span>
+                      </div>
+                    ))}
+                    {companyPartnerTab === "companies" && !settingsCompaniesForTab.length && <div className="empty-state">No companies onboarded yet.</div>}
+                    {companyPartnerTab === "customers" && !settingsCompanyOptions.filter(canBeCustomer).length && <div className="empty-state">No customers onboarded yet.</div>}
+                    {companyPartnerTab === "vendors" && !settingsCompanyOptions.filter(canBeVendor).length && <div className="empty-state">No vendors onboarded yet.</div>}
                   </div>
                 </div>
-                {settingsCompanyOptions.map((company) => {
+                {settingsCompaniesForTab.map((company) => {
                   const isExpanded = expandedCompanyIds.includes(company.id);
                   return (
                     <form className="company-settings-card" key={company.id} onSubmit={(event) => saveCompanyCard(event, company)}>
@@ -2559,13 +3117,35 @@ function App() {
               <div className="settings-section business-import-section">
                 <form className="business-import-form" onSubmit={previewBusinessPlanImport}>
                   <label>
+                    Import Under Company
+                    <select
+                      value={businessPlanCompanyId}
+                      onChange={(event) => {
+                        setBusinessPlanCompanyId(event.target.value);
+                        setBusinessScenarioImportResult(null);
+                      }}
+                      disabled={isCompanyPortal}
+                    >
+                      {(!isCompanyPortal || businessPlanCompanyOptions.length === 0) && <option value="AUTO">Auto-detect from Excel</option>}
+                      {businessPlanCompanyOptions.map((company) => (
+                        <option value={company.id} key={company.id}>{company.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
                     Excel Business Plan File
                     <input
                       type="file"
                       accept=".xlsx,.xls,.xlsb,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
                       onChange={(event) => {
-                        setBusinessPlanFile(event.currentTarget.files?.[0] ?? null);
+                        const selectedFile = event.currentTarget.files?.[0] ?? null;
+                        setBusinessPlanFile(selectedFile);
                         setBusinessPlanPreview(null);
+                        setBusinessProductImportResult(null);
+                        setBusinessScenarioImportResult(null);
+                        setShowBusinessImportProgress(Boolean(selectedFile));
+                        setBusinessImportProgress(0);
+                        setBusinessImportStatus(selectedFile ? "File selected. Preview before import." : "Waiting for business plan file");
                       }}
                     />
                   </label>
@@ -2576,25 +3156,59 @@ function App() {
                   <div className="empty-state">Upload the company activity workbook to preview companies, products, targets, and workflow rules before importing.</div>
                 )}
 
+                {showBusinessImportProgress && (
+                  <div className="import-progress-card">
+                    <div>
+                      <strong>Business Import Progress</strong>
+                      <span>{businessImportStatus}</span>
+                    </div>
+                    {businessImportProgress > 0 && (
+                      <div className="progress-track">
+                        <span style={{ width: `${businessImportProgress}%` }} />
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {businessPlanPreview && (
                   <div className="business-preview">
                     <div className="preview-metrics">
                       <Metric label="Companies" value={businessPlanPreview.counts.companies} />
+                      <Metric label="Purchase Vendors" value={businessPlanPreview.counts.purchaseVendors} />
+                      <Metric label="Sales Customers" value={businessPlanPreview.counts.salesCustomers} />
                       <Metric label="Products" value={businessPlanPreview.counts.products} />
                       <Metric label="Bank Status Rows" value={businessPlanPreview.counts.bankStatusRows} />
-                      <Metric label="Review Warnings" value={businessPlanPreview.counts.warnings} />
+                      <Metric label="Checklist Items" value={businessPlanPreview.counts.checklistItems} />
+                      <Metric label="Manual Warnings" value={businessPlanPreview.counts.warnings} />
                     </div>
 
                     <div className="config-status ready">
                       <strong>Workbook Preview Only</strong>
+                      <span>
+                        Import owner: {selectedBusinessPlanCompany
+                          ? `${selectedBusinessPlanCompany.name} (existing company)`
+                          : "Auto-detect from Excel"}
+                      </span>
                       <span>Sheets: {businessPlanPreview.workbook.sheetNames.join(", ")}</span>
                       <span>{businessPlanPreview.nextStep}</span>
                     </div>
 
                     <div className="import-action-panel">
                       <div>
+                        <strong>Business Plan Scenario Import</strong>
+                        <span>{selectedBusinessPlanCompany
+                          ? `Uses ${selectedBusinessPlanCompany.name} as the owner, then attaches purchase vendors, sales customers, monthly turnover targets, and allocation rules from this workbook.`
+                          : "Creates or updates the main company detected from Excel, plus purchase vendors, sales customers, monthly turnover target, and allocation rules."}</span>
+                      </div>
+                      <button type="button" disabled={loading || !businessPlanPreview.scenario?.mainCompany} onClick={importBusinessPlanScenario}>
+                        <Building2 size={17} /> Import Scenario
+                      </button>
+                    </div>
+
+                    <div className="import-action-panel">
+                      <div>
                         <strong>E.CARD Product Price Import</strong>
-                        <span>Imports product names and prices from the second sheet only. Companies and workflow targets are not imported in this step.</span>
+                        <span>Optional. Use only when this workbook has a product price sheet. Business plan import can use existing products already in the system.</span>
                       </div>
                       <button type="button" disabled={loading || !businessPlanPreview.counts.products} onClick={importBusinessPlanProducts}>
                         <Package size={17} /> Import Products
@@ -2608,12 +3222,126 @@ function App() {
                       </div>
                     )}
 
+                    {businessScenarioImportResult && (
+                      <div className="config-status ready">
+                        <strong>Business Plan Import Complete</strong>
+                        <span>Main company: {businessScenarioImportResult.company}</span>
+                        <span>Partners: {businessScenarioImportResult.partnersCreated} created, {businessScenarioImportResult.partnersUpdated} updated.</span>
+                        <span>Targets: {businessScenarioImportResult.turnoverTargetsCreated} created, {businessScenarioImportResult.turnoverTargetsUpdated} updated. Rules saved: {businessScenarioImportResult.rulesSaved}.</span>
+                      </div>
+                    )}
+
                     {!!businessPlanPreview.warnings.length && (
                       <div className="config-status missing">
                         <strong>Manual Review Needed</strong>
                         {businessPlanPreview.warnings.slice(0, 12).map((warning) => <span key={warning}>{warning}</span>)}
                         {businessPlanPreview.warnings.length > 12 && <span>{businessPlanPreview.warnings.length - 12} more warnings hidden.</span>}
                       </div>
+                    )}
+
+                    {!!businessPlanPreview.missingDataChecklist.length && (
+                      <section>
+                        <h3>Missing Data Checklist</h3>
+                        <div className="table import-preview-table">
+                          {businessPlanPreview.missingDataChecklist.map((item) => (
+                            <div className="row" key={`${item.section}-${item.name}-${item.missing.join("-")}`}>
+                              <span className={`status-badge ${item.severity === "WARNING" ? "held" : "open"}`}>{item.severity}</span>
+                              <span>{item.section}</span>
+                              <span>{item.name}</span>
+                              <span>{item.missing.join(", ")}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                    )}
+
+                    <section>
+                      <h3>Field Mapping Preview</h3>
+                      <div className="table import-preview-table">
+                        {businessPlanPreview.fieldMappings.map((mapping) => (
+                          <div className="row import-company-row" key={mapping.source}>
+                            <span>{mapping.source === "BUSINESS_PLAN" ? "Business Plan" : "Product Price"}</span>
+                            <span>{mapping.sheetName || "Sheet not found"}</span>
+                            <span className={`status-badge ${mapping.detected ? "completed" : "stopped"}`}>{mapping.detected ? "Detected" : "Missing"}</span>
+                            <span>
+                              {mapping.columns.map((column) => (
+                                <small key={`${mapping.source}-${column.field}`}>{column.field}: {column.header || column.status}</small>
+                              ))}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+
+                    <section>
+                      <h3>Business Scenario Preview</h3>
+                      {businessPlanPreview.scenario?.mainCompany ? (
+                        <div className="table import-preview-table">
+                          <div className="row import-company-row">
+                            <span>Main Company</span>
+                            <span>
+                              <strong>{businessPlanPreview.scenario.mainCompany.name}</strong>
+                              <small>{businessPlanPreview.scenario.mainCompany.email || "Email missing"}</small>
+                              <small>{businessPlanPreview.scenario.mainCompany.address || "Address missing"}</small>
+                            </span>
+                            <span>
+                              <strong>Purchase Target</strong>
+                              <small>{businessPlanPreview.scenario.purchasePlan?.revenueTargetText || "Not set"}</small>
+                              <small>
+                                Transaction: {businessPlanPreview.scenario.purchasePlan?.transactionAmountMin === undefined
+                                  ? "Not set"
+                                  : `${money(businessPlanPreview.scenario.purchasePlan.transactionAmountMin)}${businessPlanPreview.scenario.purchasePlan.transactionPercent ? ` (${percent(businessPlanPreview.scenario.purchasePlan.transactionPercent * 100)} of revenue)` : ""}`}
+                              </small>
+                              <small>{businessPlanPreview.scenario.purchasePlan?.invoiceRuleText || "Invoice rule missing"}</small>
+                            </span>
+                            <span>
+                              <strong>Sales Rule</strong>
+                              <small>{businessPlanPreview.scenario.salesPlan?.priceRule || "Not set"}</small>
+                              <small>{businessPlanPreview.scenario.salesPlan?.productSpecification || ""}</small>
+                            </span>
+                          </div>
+                          {businessPlanPreview.scenario.purchaseVendors.map((vendor) => (
+                            <div className="row import-company-row" key={`vendor-${vendor.name}`}>
+                              <span>Vendor</span>
+                              <span><strong>{vendor.name}</strong><small>{vendor.email || "Email can be added later"}</small></span>
+                              <span>{vendor.allocationPercent === undefined ? "-" : `${vendor.allocationPercent}% purchase allocation`}</span>
+                              <span>{vendor.address || "Address can be added later"}</span>
+                            </div>
+                          ))}
+                          {businessPlanPreview.scenario.salesCustomers.map((customer) => {
+                            const allocation = businessPlanPreview.scenario?.salesAllocations.find((entry) => entry.name.toLowerCase() === customer.name.toLowerCase());
+                            return (
+                              <div className="row import-company-row" key={`customer-${customer.name}`}>
+                                <span>Customer</span>
+                                <span><strong>{customer.name}</strong><small>{customer.email || "Email can be added later"}</small></span>
+                                <span>{allocation?.allocationPercent === undefined ? "-" : `${allocation.allocationPercent}% sales allocation`}</span>
+                                <span>
+                                  {customer.address || "Address can be added later"}
+                                  <small>{customer.bank?.bankName ? `Bank: ${customer.bank.bankName}` : "Bank can be added later"}</small>
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="empty-state">No business scenario detected in this workbook.</div>
+                      )}
+                    </section>
+
+                    {businessScenarioImportResult && (
+                      <section>
+                        <h3>Business Scenario Import Result</h3>
+                        <div className="table import-preview-table">
+                          {businessScenarioImportResult.rows.map((row) => (
+                            <div className="row" key={`${row.type}-${row.name}-${row.status}`}>
+                              <span>{row.type}</span>
+                              <span>{row.name}</span>
+                              <span className="status-badge completed">{row.status}</span>
+                              <span>{row.detail || "-"}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
                     )}
 
                     <section>
@@ -2630,6 +3358,7 @@ function App() {
                             <span>
                               <strong>Target</strong>
                               <small>{company.revenueTargetText || "Not set"}</small>
+                              <small>{company.transactionAmountMin === undefined ? "Transaction amount not set" : `Transaction ${money(company.transactionAmountMin)}`}</small>
                               <small>{company.invoiceRuleText || "Invoice rule missing"}</small>
                             </span>
                             <span>
@@ -2652,6 +3381,7 @@ function App() {
                       <div className="table product-import-preview-table">
                         {!!businessPlanPreview.products.length && (
                           <div className="row table-header">
+                            <span>SKU</span>
                             <span>Product</span>
                             <span>Currency</span>
                             <span>Denomination</span>
@@ -2665,6 +3395,7 @@ function App() {
                         )}
                         {businessPlanPreview.products.map((product) => (
                           <div className="row import-product-row" key={product.title}>
+                            <span>{product.sku}</span>
                             <span>{product.title}</span>
                             <span>{product.currency || "-"}</span>
                             <span>{product.denomination ?? "-"}</span>
@@ -2823,7 +3554,7 @@ function App() {
                       <span>{integration.company.name}</span>
                       <span>{integration.email}</span>
                       <span>{integration.mode} / {integration.status}</span>
-                      <button onClick={() => testEmailIntegration(integration.companyId)} disabled={loading}>Test</button>
+                      <button type="button" onClick={() => testEmailIntegration(integration.companyId)} disabled={loading}>Test</button>
                     </div>
                   ))}
                   {!scopedEmailIntegrations.length && (
@@ -2880,6 +3611,7 @@ function App() {
                     </select>
                   </label>
                   <button type="button" onClick={() => loadSystemLogs()} disabled={loading}><RefreshCcw size={17} /> Refresh</button>
+                  <button type="button" className="secondary-button" onClick={downloadSystemLogs} disabled={loading}><Download size={17} /> Download Logs</button>
                 </div>
 
                 {systemLogs && (
@@ -2911,6 +3643,45 @@ function App() {
 
             {settingsTab === "maintenance" && (
               <div className="settings-section maintenance-section">
+                <div className="maintenance-card database-safety-card">
+                  <div>
+                    <strong>Database Backup / Restore</strong>
+                    <span>SQLite is safe for starting volume. For higher transaction volume, move this same workflow to PostgreSQL later.</span>
+                    <span>CI/CD runs migration-safe database initialization and creates a SQLite backup before deploy.</span>
+                  </div>
+                  <div className="maintenance-button-stack">
+                    <button type="button" onClick={createDatabaseBackup} disabled={loading}><Save size={17} /> Create Backup</button>
+                    <button type="button" className="secondary-button" onClick={loadDatabaseBackups} disabled={loading}><RefreshCcw size={17} /> List Backups</button>
+                  </div>
+                </div>
+
+                <div className="backup-restore-card">
+                  <label>
+                    Restore Backup
+                    <select value={restoreBackupFile} onChange={(event) => setRestoreBackupFile(event.target.value)}>
+                      <option value="">Select backup file</option>
+                      {databaseBackups.map((backup) => (
+                        <option value={backup.fileName} key={backup.fileName}>
+                          {backup.fileName} - {(backup.bytes / 1024).toFixed(1)} KB
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button type="button" className="danger-button" disabled={loading || !restoreBackupFile} onClick={restoreDatabaseBackup}>
+                    <Trash2 size={17} /> Restore Selected Backup
+                  </button>
+                  <div className="table backup-list-table">
+                    {databaseBackups.map((backup) => (
+                      <div className="row" key={backup.fileName}>
+                        <span>{backup.fileName}</span>
+                        <span>{(backup.bytes / 1024).toFixed(1)} KB</span>
+                        <span>{appDateTime(backup.createdAt)}</span>
+                      </div>
+                    ))}
+                    {!databaseBackups.length && <div className="empty-state">No backups listed yet. Click List Backups or Create Backup.</div>}
+                  </div>
+                </div>
+
                 <div className="maintenance-card">
                   <div>
                     <strong>Flush Selected Data</strong>
@@ -3019,6 +3790,25 @@ function App() {
                 <button type="submit" disabled={loading}><Save size={17} /> Upload Stock</button>
               </form>
 
+              <form className="tool-box" onSubmit={generatePlanStock}>
+                <h3>Generate From Business Plan</h3>
+                <label>
+                  Company
+                  <select value={planStockCompanyId} onChange={(event) => setPlanStockCompanyId(event.target.value)} disabled={isCompanyPortal}>
+                    {visibleCompanyOptions.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Purchase Target Month
+                  <input type="month" value={planStockMonth} onChange={(event) => setPlanStockMonth(event.target.value)} />
+                </label>
+                <span className="muted-text">Uses business plan purchase target and product buying price. No voucher/code generation.</span>
+                <button type="submit" disabled={loading || !planStockCompanyId || !planStockMonth}>
+                  <Package size={17} /> Generate Plan Stock
+                </button>
+                {planStockStatus && <span className="muted-text">{planStockStatus}</span>}
+              </form>
+
               <form className="tool-box" onSubmit={parsePurchaseInvoice}>
                 <h3>Purchase Invoice Parser</h3>
                 <label>
@@ -3079,6 +3869,7 @@ function App() {
                 </div>
                 <div className="table product-import-preview-table">
                   <div className="row table-header">
+                    <span>SKU</span>
                     <span>Product</span>
                     <span>Currency</span>
                     <span>Denomination</span>
@@ -3091,6 +3882,7 @@ function App() {
                   </div>
                   {productPricePreview.products.map((product) => (
                     <div className="row" key={`${product.title}-${product.currency}-${product.denomination}`}>
+                      <span>{product.sku}</span>
                       <span>{product.title}</span>
                       <span>{product.currency || "-"}</span>
                       <span>{product.denomination ?? "-"}</span>
@@ -3253,6 +4045,40 @@ function App() {
               ))}
               {!scopedStock.length && <div className="empty-state">No stock rows yet.</div>}
             </div>
+
+            <div className="table-section-title">
+              <strong>Stock Movement Report</strong>
+              <span>{scopedStockMovementReport.length} product balances</span>
+            </div>
+            <div className="table stock-movement-table">
+              {!!scopedStockMovementReport.length && (
+                <div className="row table-header">
+                  <span>Company</span>
+                  <span>Product</span>
+                  <span>Purchased</span>
+                  <span>Purchase Value</span>
+                  <span>Sold</span>
+                  <span>Sales Value</span>
+                  <span>Balance</span>
+                  <span>Balance Buy Value</span>
+                  <span>Balance Sell Value</span>
+                </div>
+              )}
+              {scopedStockMovementReport.map((row) => (
+                <div className="row" key={`${row.companyId}-${row.itemId}`}>
+                  <span>{row.companyName}</span>
+                  <span><strong>{row.sku}</strong><small>{row.itemName}</small></span>
+                  <span>{row.purchasedQuantity} {row.unit}</span>
+                  <span>{money(row.purchaseValue)}</span>
+                  <span>{row.soldQuantity} {row.unit}</span>
+                  <span>{money(row.salesValue)}</span>
+                  <span>{row.balanceQuantity} {row.unit}</span>
+                  <span>{money(row.balanceBuyingValue)}</span>
+                  <span>{money(row.balanceSellingValue)}</span>
+                </div>
+              ))}
+              {!scopedStockMovementReport.length && <div className="empty-state">No stock movements yet.</div>}
+            </div>
           </Panel>
         )}
 
@@ -3304,6 +4130,35 @@ function App() {
 
         {activeView === "workflow" && (
           <Panel title={isCompanyPortal ? `${portalDisplayName} AI Agent Workflow` : "AI Agent Workflow"}>
+            <form className="agent-task-form business-plan-agent-form" onSubmit={runImportedBusinessPlanAgent}>
+              <label>
+                Business Plan Company
+                <select value={planAgentCompanyId} onChange={(event) => setPlanAgentCompanyId(event.target.value)} disabled={isCompanyPortal}>
+                  <option value="">Select company</option>
+                  {visibleCompanyOptions.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}
+                </select>
+              </label>
+              <label>
+                Month
+                <input type="month" value={planAgentMonth} onChange={(event) => setPlanAgentMonth(event.target.value)} />
+              </label>
+              <label>
+                Date From
+                <input type="date" value={planAgentDateFrom} onChange={(event) => setPlanAgentDateFrom(event.target.value)} />
+              </label>
+              <label>
+                Date To
+                <input type="date" value={planAgentDateTo} onChange={(event) => setPlanAgentDateTo(event.target.value)} />
+              </label>
+              <label>
+                Random Products Per Invoice
+                <input type="number" min="1" max="20" step="1" value={planAgentLineCount} onChange={(event) => setPlanAgentLineCount(event.target.value)} />
+              </label>
+              <button type="submit" disabled={loading || agentRunning || !planAgentCompanyId}>
+                <Play size={17} /> {agentRunning ? "Running Plan..." : "Run Business Plan Agent"}
+              </button>
+              {planAgentStatus && <div className="local-success stock-local-message">{planAgentStatus}</div>}
+            </form>
             <div className="command-templates">
               <button type="button" className="secondary-button" onClick={() => applyAgentTemplate("today")}>Create today PO</button>
               <button type="button" className="secondary-button" onClick={() => applyAgentTemplate("multipleToday")}>Create multiple POs today</button>
@@ -3559,13 +4414,13 @@ function App() {
                   <span>{target.buyerCompany.name} to {target.sellerCompany.name}</span>
                   <span className="target-value">{target.invoiceNumber ? "Invoice" : "PO"} {targetDocumentValue(target)}</span>
                   <span className={`status-badge ${target.status.toLowerCase()}`}>{target.status}</span>
-                  <button className="secondary-button" onClick={() => downloadTargetPoPdf(target)} disabled={loading || target.status === "OPEN"}><Download size={16} /> PO PDF</button>
-                  <button onClick={() => target.status === "PO_SENT" ? createVendorInvoice(target.id) : runWorkflow(target.id)} disabled={loading || !["OPEN", "PO_SENT"].includes(target.status) || (target.status === "PO_SENT" && !canCreateVendorInvoice(target))}>
+                  <button type="button" className="secondary-button" onClick={() => downloadTargetPoPdf(target)} disabled={loading || target.status === "OPEN"}><Download size={16} /> PO PDF</button>
+                  <button type="button" onClick={() => target.status === "PO_SENT" ? createVendorInvoice(target.id) : runWorkflow(target.id)} disabled={loading || !["OPEN", "PO_SENT"].includes(target.status) || (target.status === "PO_SENT" && !canCreateVendorInvoice(target))}>
                     {target.status === "OPEN" ? "Send PO" : target.status === "PO_SENT" ? (canCreateVendorInvoice(target) ? "Create Invoice" : "Waiting Invoice") : "Completed"}
                   </button>
-                  <button className="secondary-button" onClick={() => stopWorkflow(target.id)} disabled={loading || target.status !== "OPEN"}><Square size={16} /> Stop</button>
-                  <button className="secondary-button" onClick={() => editTarget(target)} disabled={loading || target.status !== "OPEN"}><Edit size={16} /> Edit</button>
-                  <button className="danger-button" onClick={() => deleteTarget(target.id)} disabled={loading || target.status !== "OPEN"}><Trash2 size={16} /> Delete</button>
+                  <button type="button" className="secondary-button" onClick={() => stopWorkflow(target.id)} disabled={loading || target.status !== "OPEN"}><Square size={16} /> Stop</button>
+                  <button type="button" className="secondary-button" onClick={() => editTarget(target)} disabled={loading || target.status !== "OPEN"}><Edit size={16} /> Edit</button>
+                  <button type="button" className="danger-button" onClick={() => deleteTarget(target.id)} disabled={loading || target.status !== "OPEN"}><Trash2 size={16} /> Delete</button>
                 </div>
               ))}
               {!todayTargets.length && (
@@ -3583,13 +4438,13 @@ function App() {
                   <span>{target.buyerCompany.name} to {target.sellerCompany.name}</span>
                   <span className="target-value">{target.invoiceNumber ? "Invoice" : "PO"} {targetDocumentValue(target)}</span>
                   <span className={`status-badge ${target.status.toLowerCase()}`}>{target.status}</span>
-                  <button className="secondary-button" onClick={() => downloadTargetPoPdf(target)} disabled={loading || target.status === "OPEN"}><Download size={16} /> PO PDF</button>
-                  <button onClick={() => target.status === "PO_SENT" ? createVendorInvoice(target.id) : runWorkflow(target.id)} disabled={loading || !["OPEN", "PO_SENT"].includes(target.status) || (target.status === "PO_SENT" && !canCreateVendorInvoice(target))}>
+                  <button type="button" className="secondary-button" onClick={() => downloadTargetPoPdf(target)} disabled={loading || target.status === "OPEN"}><Download size={16} /> PO PDF</button>
+                  <button type="button" onClick={() => target.status === "PO_SENT" ? createVendorInvoice(target.id) : runWorkflow(target.id)} disabled={loading || !["OPEN", "PO_SENT"].includes(target.status) || (target.status === "PO_SENT" && !canCreateVendorInvoice(target))}>
                     {target.status === "OPEN" ? "Send PO" : target.status === "PO_SENT" ? (canCreateVendorInvoice(target) ? "Create Invoice" : "Waiting Invoice") : "Completed"}
                   </button>
-                  <button className="secondary-button" onClick={() => stopWorkflow(target.id)} disabled={loading || target.status !== "OPEN"}><Square size={16} /> Stop</button>
-                  <button className="secondary-button" onClick={() => editTarget(target)} disabled={loading || target.status !== "OPEN"}><Edit size={16} /> Edit</button>
-                  <button className="danger-button" onClick={() => deleteTarget(target.id)} disabled={loading || target.status !== "OPEN"}><Trash2 size={16} /> Delete</button>
+                  <button type="button" className="secondary-button" onClick={() => stopWorkflow(target.id)} disabled={loading || target.status !== "OPEN"}><Square size={16} /> Stop</button>
+                  <button type="button" className="secondary-button" onClick={() => editTarget(target)} disabled={loading || target.status !== "OPEN"}><Edit size={16} /> Edit</button>
+                  <button type="button" className="danger-button" onClick={() => deleteTarget(target.id)} disabled={loading || target.status !== "OPEN"}><Trash2 size={16} /> Delete</button>
                 </div>
               ))}
               {!otherWorkflowTargets.length && (
@@ -3628,8 +4483,8 @@ function App() {
                       <h2>{invoiceDetail.invoiceNumber}</h2>
                     </div>
                     <div className="invoice-actions">
-                      <button onClick={() => downloadInvoicePdf(invoiceDetail.id)} disabled={loading}><Download size={17} /> Download PDF</button>
-                      <button onClick={() => sendInvoice(invoiceDetail.id)} disabled={loading}><Send size={17} /> Send Invoice</button>
+                      <button type="button" onClick={() => downloadInvoicePdf(invoiceDetail.id)} disabled={loading}><Download size={17} /> Download PDF</button>
+                      <button type="button" onClick={() => sendInvoice(invoiceDetail.id)} disabled={loading}><Send size={17} /> Send Invoice</button>
                     </div>
                   </div>
 
@@ -3683,6 +4538,79 @@ function App() {
           </Panel>
         )}
 
+        {activeView === "reports" && (
+          <Panel title="Reports">
+            <form className="stock-form report-filter-form" onSubmit={(event) => { event.preventDefault(); loadReports().catch((error) => setMessage(error.message)); }}>
+              <label>
+                Company
+                <select value={reportCompanyId} onChange={(event) => setReportCompanyId(event.target.value)} disabled={isCompanyPortal}>
+                  <option value="ALL">All companies</option>
+                  {visibleCompanyOptions.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}
+                </select>
+              </label>
+              <label>
+                Month
+                <input type="month" value={reportMonth} onChange={(event) => setReportMonth(event.target.value)} />
+              </label>
+              <label>
+                Customer
+                <select value={reportCustomerId} onChange={(event) => setReportCustomerId(event.target.value)}>
+                  <option value="ALL">All customers</option>
+                  {allCustomerCompanyOptions.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}
+                </select>
+              </label>
+              <label>
+                Vendor
+                <select value={reportVendorId} onChange={(event) => setReportVendorId(event.target.value)}>
+                  <option value="ALL">All vendors</option>
+                  {allVendorCompanyOptions.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}
+                </select>
+              </label>
+              <label>
+                Product
+                <select value={reportProductId} onChange={(event) => setReportProductId(event.target.value)}>
+                  <option value="ALL">All products</option>
+                  {(summary?.items ?? []).map((item) => <option value={item.id} key={item.id}>{item.sku} - {item.name}</option>)}
+                </select>
+              </label>
+              <button type="submit" disabled={loading}><RefreshCcw size={17} /> Refresh Reports</button>
+            </form>
+
+            <div className="report-grid">
+              <ReportTable title="Purchase Report - Vendor Wise" count={filteredPurchaseVendorWise.length} empty="No purchase vendor rows." headers={["Vendor", "Invoices", "Qty", "Subtotal", "VAT", "Total"]}>
+                {filteredPurchaseVendorWise.map((row) => <div className="row" key={row.vendorId}><span>{row.vendorName}</span><span>{row.invoiceCount}</span><span>{row.quantity}</span><span>{money(row.subtotal)}</span><span>{money(row.vatAmount)}</span><span>{money(row.total)}</span></div>)}
+              </ReportTable>
+              <ReportTable title="Purchase Report - Product Wise" count={filteredPurchaseProductWise.length} empty="No purchase product rows." headers={["SKU", "Product", "Qty", "Buying Value", "VAT"]}>
+                {filteredPurchaseProductWise.map((row) => <div className="row" key={row.itemId}><span>{row.sku}</span><span>{row.itemName}</span><span>{row.quantity}</span><span>{money(row.buyingValue)}</span><span>{money(row.vatAmount)}</span></div>)}
+              </ReportTable>
+              <ReportTable title="Purchase Report - PO / Invoice Wise" count={filteredPurchaseInvoiceWise.length} empty="No purchase invoices." headers={["Date", "PO", "Invoice", "Vendor", "Subtotal", "VAT", "Total"]} wide>
+                {filteredPurchaseInvoiceWise.map((row) => <div className="row" key={row.invoiceId}><span>{appDate(row.date)}</span><span>{row.poNumber}</span><span>{row.invoiceNumber}</span><span>{row.vendorName}</span><span>{money(row.subtotal)}</span><span>{money(row.vatAmount)}</span><span>{money(row.total)}</span></div>)}
+              </ReportTable>
+              <ReportTable title="Sales Report - Customer Wise" count={filteredSalesCustomerWise.length} empty="No sales customer rows." headers={["Customer", "Invoices", "Qty", "Subtotal", "VAT", "Total"]}>
+                {filteredSalesCustomerWise.map((row) => <div className="row" key={row.customerId}><span>{row.customerName}</span><span>{row.invoiceCount}</span><span>{row.quantity}</span><span>{money(row.subtotal)}</span><span>{money(row.vatAmount)}</span><span>{money(row.total)}</span></div>)}
+              </ReportTable>
+              <ReportTable title="Sales Report - Product Wise" count={filteredSalesProductWise.length} empty="No sales product rows." headers={["SKU", "Product", "Qty", "Selling Value", "VAT"]}>
+                {filteredSalesProductWise.map((row) => <div className="row" key={row.itemId}><span>{row.sku}</span><span>{row.itemName}</span><span>{row.quantity}</span><span>{money(row.sellingValue)}</span><span>{money(row.vatAmount)}</span></div>)}
+              </ReportTable>
+              <ReportTable title="Sales Report - Invoice Wise" count={filteredSalesInvoiceWise.length} empty="No sales invoices." headers={["Date", "Invoice", "Customer", "Subtotal", "VAT", "Total"]} wide>
+                {filteredSalesInvoiceWise.map((row) => <div className="row" key={row.invoiceId}><span>{appDate(row.date)}</span><span>{row.invoiceNumber}</span><span>{row.customerName}</span><span>{money(row.subtotal)}</span><span>{money(row.vatAmount)}</span><span>{money(row.total)}</span></div>)}
+              </ReportTable>
+              <ReportTable title="Profit Report" count={filteredProfitRows.length} empty="No profit rows." headers={["Company", "Product", "Buy Value", "Sell Value", "Margin", "%"]} wide subtitle={`VAT Net ${money(reports?.profit.vat.netVat ?? 0)}`}>
+                {filteredProfitRows.map((row) => <div className="row" key={`${row.companyId}-${row.sku}`}><span>{row.companyName}</span><span>{row.sku}<small>{row.itemName}</small></span><span>{money(row.buyingValue)}</span><span>{money(row.sellingValue)}</span><span>{money(row.margin)}</span><span>{row.marginPercent}%</span></div>)}
+              </ReportTable>
+              <ReportTable title="Stock Report" count={filteredStockRows.length} empty="No stock movement rows." headers={["Company", "Product", "Opening", "Purchase", "Sales", "Closing", "Closing Buy", "Closing Sell"]} wide>
+                {filteredStockRows.map((row) => <div className="row" key={`${row.companyId}-${row.sku}`}><span>{row.companyName}</span><span>{row.sku}<small>{row.itemName}</small></span><span>{row.opening}</span><span>{row.purchased}</span><span>{row.sold}</span><span>{row.closing}</span><span>{money(row.closingBuyingValue)}</span><span>{money(row.closingSellingValue)}</span></div>)}
+              </ReportTable>
+              <ReportTable title="Target Achievement" count={reports?.targetAchievement.rows.length ?? 0} empty="No targets configured for this filter." headers={["Company", "Month", "Type", "Planned", "Actual", "Variance", "%", "Invoices"]} wide>
+                {reports?.targetAchievement.rows.map((row) => <div className="row" key={`${row.companyId}-${row.month}-${row.type}`}><span>{row.companyName}</span><span>{row.month}</span><span>{row.type}</span><span>{money(row.plannedValue)}</span><span>{money(row.actualValue)}</span><span>{money(row.variance)}</span><span>{row.achievementPercent}%</span><span>{row.invoiceCount}</span></div>)}
+              </ReportTable>
+              <ReportTable title="Audit Report" count={reports?.audit.events.length ?? 0} empty="No audit events." headers={["Date", "Type", "Status", "Title", "Detail / Failure"]} audit>
+                {reports?.audit.events.map((row) => <div className="row" key={`${row.type}-${row.id}`}><span>{appDateTime(row.date)}</span><span>{row.type}</span><span>{row.status}</span><span>{row.title}</span><span>{row.failureReason || row.detail}</span></div>)}
+              </ReportTable>
+            </div>
+          </Panel>
+        )}
+
       </section>
     </main>
   );
@@ -3715,6 +4643,37 @@ function Metric({ label, value }: { label: string; value: string | number }) {
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return <section className="panel"><h2>{title}</h2>{children}</section>;
+}
+
+function ReportTable({
+  title,
+  count,
+  subtitle,
+  empty,
+  headers,
+  children,
+  wide,
+  audit,
+}: {
+  title: string;
+  count: number;
+  subtitle?: string;
+  empty: string;
+  headers: string[];
+  children: React.ReactNode;
+  wide?: boolean;
+  audit?: boolean;
+}) {
+  return (
+    <section className="report-section">
+      <div className="table-section-title"><strong>{title}</strong><span>{subtitle ?? `${count} rows`}</span></div>
+      <div className={`table ${audit ? "audit-report-table" : wide ? "report-wide-table" : "report-table"}`}>
+        {!!count && <div className="row table-header">{headers.map((header) => <span key={header}>{header}</span>)}</div>}
+        {children}
+        {!count && <div className="empty-state">{empty}</div>}
+      </div>
+    </section>
+  );
 }
 
 createRoot(document.getElementById("root")!).render(<App />);

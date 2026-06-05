@@ -12,6 +12,7 @@ async function clearDb() {
   await prisma.emailLog.deleteMany();
   await prisma.agentDecision.deleteMany();
   await prisma.emailIntegration.deleteMany();
+  await prisma.stockMovement.deleteMany();
   await prisma.invoiceLine.deleteMany();
   await prisma.invoice.deleteMany();
   await prisma.purchaseOrderLine.deleteMany();

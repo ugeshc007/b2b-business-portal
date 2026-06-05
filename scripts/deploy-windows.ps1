@@ -40,7 +40,7 @@ $dbPath = Join-Path $AppDir "prisma\dev.db"
 if (Test-Path $dbPath) {
   $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
   Copy-Item -LiteralPath $dbPath -Destination (Join-Path $BackupDir "dev-$stamp.db") -Force
-  Write-Host "SQLite backup created."
+  Write-Host "SQLite backup created before database-safe migration."
 }
 
 $excludeDirs = @(".git", ".github", "node_modules", "storage", "release", "qa-output", "backups")
@@ -57,6 +57,7 @@ try {
   npm install
   $env:DATABASE_URL = "file:./dev.db"
   npm run prisma:generate
+  Write-Host "Running migration-safe SQLite initialization. Existing data is preserved."
   npm run db:init
   npm run build
   $env:NODE_ENV = "production"

@@ -34,6 +34,8 @@ model User {
   email        String   @unique
   passwordHash String
   name         String
+  role         String   @default("ADMIN")
+  companyId    String?
   createdAt    DateTime @default(now())
 }
 
@@ -61,6 +63,7 @@ model Company {
   managedPartners Company[] @relation("ManagedPartners")
 
   stocks         Stock[]
+  stockMovements StockMovement[]
   buyerTargets   MonthlyTarget[] @relation("BuyerTargets")
   sellerTargets  MonthlyTarget[] @relation("SellerTargets")
   buyerReqs      Requirement[]   @relation("BuyerRequirements")
@@ -97,6 +100,7 @@ model Item {
   createdAt      DateTime @default(now())
 
   stocks           Stock[]
+  stockMovements   StockMovement[]
   targetLines      MonthlyTargetLine[]
   requirementLines RequirementLine[]
   quotationLines   QuotationLine[]
@@ -138,6 +142,28 @@ model Stock {
   item    Item    @relation(fields: [itemId], references: [id])
 
   @@unique([companyId, itemId])
+}
+
+model StockMovement {
+  id            String   @id @default(cuid())
+  companyId     String
+  itemId        String
+  type          String
+  quantity      Int
+  unitCost      Decimal?
+  unitPrice     Decimal?
+  purchaseValue Decimal  @default(0)
+  salesValue    Decimal  @default(0)
+  source        String?
+  reference     String?
+  notes         String?
+  createdAt     DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id])
+  item    Item    @relation(fields: [itemId], references: [id])
+
+  @@index([companyId, itemId])
+  @@index([source, reference])
 }
 
 model MonthlyTarget {
