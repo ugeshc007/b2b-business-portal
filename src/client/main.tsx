@@ -190,6 +190,8 @@ type BusinessPlanPreview = {
   products: Array<{
     title: string;
     currency?: string;
+    denomination?: number;
+    conversionRate?: number;
     denominationAed?: number;
     buyingPrice?: number;
     sellingPrice?: number;
@@ -385,7 +387,10 @@ function App() {
   const [businessPlanPreview, setBusinessPlanPreview] = useState<BusinessPlanPreview | null>(null);
   const [businessProductImportResult, setBusinessProductImportResult] = useState<BusinessPlanProductImportResult | null>(null);
   const [productPriceFile, setProductPriceFile] = useState<File | null>(null);
+  const [productPricePreview, setProductPricePreview] = useState<BusinessPlanPreview | null>(null);
   const [productPriceImportResult, setProductPriceImportResult] = useState<BusinessPlanProductImportResult | null>(null);
+  const [productImportStatus, setProductImportStatus] = useState("Waiting for product file");
+  const [productImportProgress, setProductImportProgress] = useState(0);
   const [stockLocalMessage, setStockLocalMessage] = useState("");
   const [expandedCompanyIds, setExpandedCompanyIds] = useState<string[]>([]);
   const [companyScopeId, setCompanyScopeId] = useState("ALL");
@@ -838,11 +843,45 @@ function App() {
     }
   }
 
+  async function previewProductPriceFile(file: File | null, onPreview: (preview: BusinessPlanPreview) => void) {
+    if (!file) {
+      setMessage("Select a product price Excel file first.");
+      return;
+    }
+    setProductImportStatus("Reading Excel file and preparing preview...");
+    setProductImportProgress(35);
+    setLoading(true);
+    try {
+      const response = await fetch(`${apiUrl}/api/business-plan-import/preview`, {
+        method: "POST",
+        headers: {
+          "Content-Type": file.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: file,
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not preview product prices");
+      onPreview(data);
+      setProductImportProgress(100);
+      setProductImportStatus(`Preview ready: ${data.counts.products} product rows detected.`);
+      setMessage(`Product preview ready: ${data.counts.products} rows detected.`);
+    } catch (error) {
+      setProductImportProgress(0);
+      setProductImportStatus("Preview failed.");
+      setMessage(error instanceof Error ? error.message : "Could not preview product prices");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function importProductPriceFile(file: File | null, onResult: (result: BusinessPlanProductImportResult) => void) {
     if (!file) {
       setMessage("Select a product price Excel file first.");
       return;
     }
+    setProductImportStatus("Importing products into database...");
+    setProductImportProgress(65);
     setLoading(true);
     try {
       const response = await fetch(`${apiUrl}/api/business-plan-import/import-products`, {
@@ -856,9 +895,13 @@ function App() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Could not import product prices");
       onResult(data);
+      setProductImportProgress(100);
+      setProductImportStatus(`Import complete: ${data.created} created, ${data.updated} updated, ${data.skipped} skipped.`);
       setMessage(`Product import complete: ${data.created} created, ${data.updated} updated, ${data.skipped} skipped.`);
       await loadSummary();
     } catch (error) {
+      setProductImportProgress(0);
+      setProductImportStatus("Import failed.");
       setMessage(error instanceof Error ? error.message : "Could not import product prices");
     } finally {
       setLoading(false);
@@ -870,12 +913,35 @@ function App() {
       setMessage("Preview the Excel file before importing products.");
       return;
     }
-    await importProductPriceFile(businessPlanFile, setBusinessProductImportResult);
+    setConfirmationToast({
+      title: "Import previewed products?",
+      message: `Import ${businessPlanPreview.counts.products} product rows from this Excel workbook. Existing matching SKUs will be updated.`,
+      confirmLabel: "Import Products",
+      onConfirm: async () => {
+        await importProductPriceFile(businessPlanFile, setBusinessProductImportResult);
+      },
+    });
   }
 
-  async function importStockProductPrices(event: React.FormEvent) {
+  async function previewStockProductPrices(event: React.FormEvent) {
     event.preventDefault();
-    await importProductPriceFile(productPriceFile, setProductPriceImportResult);
+    setProductPriceImportResult(null);
+    await previewProductPriceFile(productPriceFile, setProductPricePreview);
+  }
+
+  async function importStockProductPrices() {
+    if (!productPricePreview) {
+      setMessage("Preview the product file before importing.");
+      return;
+    }
+    setConfirmationToast({
+      title: "Import previewed products?",
+      message: `Import ${productPricePreview.counts.products} product rows. Existing matching SKUs will be updated. Stock quantity will not change.`,
+      confirmLabel: "Import Products",
+      onConfirm: async () => {
+        await importProductPriceFile(productPriceFile, setProductPriceImportResult);
+      },
+    });
   }
 
   async function deleteStockRow(stock: Stock) {
@@ -2412,34 +2478,68 @@ function App() {
 
                     <section>
                       <h3>Product Price Preview</h3>
-                      <div className="table import-preview-table">
-                        {businessPlanPreview.products.slice(0, 20).map((product) => (
+                      <div className="table product-import-preview-table">
+                        {!!businessPlanPreview.products.length && (
+                          <div className="row table-header">
+                            <span>Product</span>
+                            <span>Currency</span>
+                            <span>Denomination</span>
+                            <span>Conversion</span>
+                            <span>Denom AED</span>
+                            <span>Buying</span>
+                            <span>Profit</span>
+                            <span>%</span>
+                            <span>Selling</span>
+                          </div>
+                        )}
+                        {businessPlanPreview.products.map((product) => (
                           <div className="row import-product-row" key={product.title}>
                             <span>{product.title}</span>
                             <span>{product.currency || "-"}</span>
+                            <span>{product.denomination ?? "-"}</span>
+                            <span>{product.conversionRate ?? "-"}</span>
                             <span>{product.denominationAed === undefined ? "-" : money(product.denominationAed)}</span>
                             <span>Buy {product.buyingPrice === undefined ? "-" : money(product.buyingPrice)}</span>
+                            <span>{product.profit === undefined ? "-" : money(product.profit)}</span>
+                            <span>{percent(product.marginPercent)}</span>
                             <span>Sell {product.sellingPrice === undefined ? "-" : money(product.sellingPrice)}</span>
                           </div>
                         ))}
-                        {businessPlanPreview.products.length > 20 && <div className="empty-state">{businessPlanPreview.products.length - 20} more products detected.</div>}
                       </div>
                     </section>
 
                     {businessProductImportResult && (
                       <section>
                         <h3>Imported Product Result</h3>
-                        <div className="table import-preview-table">
-                          {businessProductImportResult.rows.slice(0, 20).map((row) => (
+                        <div className="table product-import-preview-table">
+                          <div className="row table-header">
+                            <span>Product</span>
+                            <span>Status</span>
+                            <span>Currency</span>
+                            <span>Denomination</span>
+                            <span>Conversion</span>
+                            <span>Denom AED</span>
+                            <span>Buying</span>
+                            <span>Profit</span>
+                            <span>%</span>
+                            <span>Selling</span>
+                            <span>Reason</span>
+                          </div>
+                          {businessProductImportResult.rows.map((row) => (
                             <div className="row import-product-row" key={`${row.sku}-${row.status}`}>
                               <span>{row.sku}<small>{row.name}</small></span>
                               <span>{row.status}</span>
+                              <span>{row.currency ?? "-"}</span>
+                              <span>{row.denomination ?? "-"}</span>
+                              <span>{row.conversionRate ?? "-"}</span>
+                              <span>{row.denominationAed === undefined ? "-" : money(row.denominationAed)}</span>
                               <span>Buy {row.buyingPrice === undefined ? "-" : money(row.buyingPrice)}</span>
+                              <span>{row.profit === undefined ? "-" : money(row.profit)}</span>
+                              <span>{percent(row.marginPercent)}</span>
                               <span>Sell {money(row.sellingPrice)}</span>
                               <span>{row.reason || "-"}</span>
                             </div>
                           ))}
-                          {businessProductImportResult.rows.length > 20 && <div className="empty-state">{businessProductImportResult.rows.length - 20} more imported rows hidden.</div>}
                         </div>
                       </section>
                     )}
@@ -2737,7 +2837,7 @@ function App() {
                 <button type="submit" disabled={loading}><Save size={17} /> Insert Stock</button>
               </form>
 
-              <form className="tool-box" onSubmit={importStockProductPrices}>
+              <form className="tool-box" onSubmit={previewStockProductPrices}>
                 <h3>Product Price Upload</h3>
                 <label>
                   E.CARD Product File
@@ -2746,14 +2846,66 @@ function App() {
                     accept=".xlsx,.xls,.xlsb,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
                     onChange={(event) => {
                       setProductPriceFile(event.currentTarget.files?.[0] ?? null);
+                      setProductPricePreview(null);
                       setProductPriceImportResult(null);
+                      setProductImportProgress(event.currentTarget.files?.[0] ? 10 : 0);
+                      setProductImportStatus(event.currentTarget.files?.[0] ? "File selected. Preview before import." : "Waiting for product file");
                     }}
                   />
                 </label>
                 <span className="muted-text">Imports product name, buying price, and selling price. Stock quantity is not changed.</span>
-                <button type="submit" disabled={loading || !productPriceFile}><Package size={17} /> Import Products</button>
+                <button type="submit" disabled={loading || !productPriceFile}><FileText size={17} /> Preview Products</button>
+                <button type="button" disabled={loading || !productPricePreview?.counts.products} onClick={importStockProductPrices}>
+                  <Package size={17} /> Confirm Import
+                </button>
               </form>
             </section>
+
+            <div className="import-progress-card">
+              <div>
+                <strong>Import Progress</strong>
+                <span>{productImportStatus}</span>
+              </div>
+              <div className="progress-track">
+                <span style={{ width: `${productImportProgress}%` }} />
+              </div>
+            </div>
+
+            {productPricePreview && (
+              <section className="stock-product-preview">
+                <div className="table-section-title">
+                  <strong>Product Upload Preview</strong>
+                  <span>{productPricePreview.counts.products} rows detected from {productPricePreview.workbook.sheetNames.join(", ")}</span>
+                </div>
+                <div className="table product-import-preview-table">
+                  <div className="row table-header">
+                    <span>Product</span>
+                    <span>Currency</span>
+                    <span>Denomination</span>
+                    <span>Conversion</span>
+                    <span>Denom AED</span>
+                    <span>Buying</span>
+                    <span>Profit</span>
+                    <span>%</span>
+                    <span>Selling</span>
+                  </div>
+                  {productPricePreview.products.map((product) => (
+                    <div className="row" key={`${product.title}-${product.currency}-${product.denomination}`}>
+                      <span>{product.title}</span>
+                      <span>{product.currency || "-"}</span>
+                      <span>{product.denomination ?? "-"}</span>
+                      <span>{product.conversionRate ?? "-"}</span>
+                      <span>{product.denominationAed === undefined ? "-" : money(product.denominationAed)}</span>
+                      <span>{product.buyingPrice === undefined ? "-" : money(product.buyingPrice)}</span>
+                      <span>{product.profit === undefined ? "-" : money(product.profit)}</span>
+                      <span>{percent(product.marginPercent)}</span>
+                      <span>{product.sellingPrice === undefined ? "-" : money(product.sellingPrice)}</span>
+                    </div>
+                  ))}
+                  {!productPricePreview.products.length && <div className="empty-state">No product rows found in this file.</div>}
+                </div>
+              </section>
+            )}
 
             {productPriceImportResult && (
               <div className="config-status ready stock-import-result">
@@ -2769,6 +2921,45 @@ function App() {
                   {productPriceImportResult.rows.length > 12 && <span>+ {productPriceImportResult.rows.length - 12} more products in Product Master.</span>}
                 </div>
               </div>
+            )}
+
+            {productPriceImportResult && (
+              <section className="stock-product-preview">
+                <div className="table-section-title">
+                  <strong>Product Import Result</strong>
+                  <span>{productPriceImportResult.rows.length} rows processed</span>
+                </div>
+                <div className="table product-import-result-table">
+                  <div className="row table-header">
+                    <span>Product</span>
+                    <span>Status</span>
+                    <span>Currency</span>
+                    <span>Denomination</span>
+                    <span>Conversion</span>
+                    <span>Denom AED</span>
+                    <span>Buying</span>
+                    <span>Profit</span>
+                    <span>%</span>
+                    <span>Selling</span>
+                    <span>Reason</span>
+                  </div>
+                  {productPriceImportResult.rows.map((row) => (
+                    <div className="row" key={`${row.sku}-${row.status}-${row.name}`}>
+                      <span>{row.sku}<small>{row.name}</small></span>
+                      <span>{row.status}</span>
+                      <span>{row.currency ?? "-"}</span>
+                      <span>{row.denomination ?? "-"}</span>
+                      <span>{row.conversionRate ?? "-"}</span>
+                      <span>{row.denominationAed === undefined ? "-" : money(row.denominationAed)}</span>
+                      <span>{row.buyingPrice === undefined ? "-" : money(row.buyingPrice)}</span>
+                      <span>{row.profit === undefined ? "-" : money(row.profit)}</span>
+                      <span>{percent(row.marginPercent)}</span>
+                      <span>{money(row.sellingPrice)}</span>
+                      <span>{row.reason || "-"}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
             )}
 
             <div className="table-section-title">

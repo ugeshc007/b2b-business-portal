@@ -1000,6 +1000,67 @@ nav .nav-button.active {
   overflow: auto;
 }
 
+.import-progress-card {
+  display: grid;
+  gap: 10px;
+  margin: 16px;
+  padding: 14px;
+  border: 1px solid #d8dfda;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.import-progress-card div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.import-progress-card span {
+  color: #66756a;
+}
+
+.progress-track {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e7eee9;
+}
+
+.progress-track span {
+  display: block;
+  height: 100%;
+  background: #21513e;
+  transition: width 180ms ease;
+}
+
+.stock-product-preview {
+  margin: 16px;
+}
+
+.product-import-preview-table,
+.product-import-result-table {
+  overflow-x: auto;
+}
+
+.product-import-preview-table .row {
+  grid-template-columns: minmax(260px, 1.4fr) repeat(8, minmax(110px, 0.7fr));
+  min-width: 1180px;
+}
+
+.product-import-result-table .row {
+  grid-template-columns: minmax(260px, 1.4fr) minmax(100px, 0.6fr) repeat(8, minmax(110px, 0.7fr)) minmax(160px, 0.8fr);
+  min-width: 1450px;
+}
+
+.product-import-preview-table small,
+.product-import-result-table small {
+  display: block;
+  margin-top: 3px;
+  color: #66756a;
+}
+
 .product-master-table {
   overflow-x: auto;
 }
@@ -1015,7 +1076,9 @@ nav .nav-button.active {
   color: #66756a;
 }
 
-.product-master-table .table-header {
+.product-master-table .table-header,
+.product-import-preview-table .table-header,
+.product-import-result-table .table-header {
   font-weight: 700;
   color: #2a382f;
   background: #f4f8f5;
