@@ -677,6 +677,69 @@ describe("api", () => {
     expect(fs.readdirSync(logsDir).filter((file) => file.endsWith(".log"))).toEqual([]);
   });
 
+  it("flushes only selected maintenance categories", async () => {
+    await createUser("admin@example.com", "ChangeMe123!", "Admin");
+    const buyer = await createCompany({
+      name: "Dealzarabia",
+      legalName: "Dealzarabia Trading LLC",
+      location: "Dubai",
+      email: "selective-buyer@example.com",
+    });
+    const seller = await createCompany({
+      name: "Buy2day",
+      legalName: "Buy2day Distribution LLC",
+      location: "Sharjah",
+      email: "selective-seller@example.com",
+    });
+    const item = await createItem({ sku: "SEL-001", name: "Selective Item", unit: "code", expectedPrice: 100 });
+    const target = await createMonthlyTarget({
+      buyerCompanyId: buyer.id,
+      sellerCompanyId: seller.id,
+      month: "2026-06",
+      lines: [{ itemId: item.id, quantity: 2, maxPrice: 110 }],
+    });
+    const requirement = await prisma.requirement.create({
+      data: {
+        targetId: target.id,
+        buyerCompanyId: buyer.id,
+        sellerCompanyId: seller.id,
+        subject: "Selective flush requirement",
+        body: "Selective flush requirement",
+      },
+    });
+    await prisma.emailLog.create({
+      data: {
+        requirementId: requirement.id,
+        direction: "OUTBOUND",
+        fromEmail: buyer.email,
+        toEmail: seller.email,
+        subject: "Selective flush test",
+        body: "Selective flush test",
+        status: "SENT",
+      },
+    });
+
+    const login = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "admin@example.com", password: "ChangeMe123!" })
+      .expect(200);
+
+    const flushed = await request(app)
+      .post("/api/maintenance/flush-transactional-data")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .send({ categories: ["transactions"] })
+      .expect(200);
+
+    expect(flushed.body.selectedCategories).toEqual(["transactions"]);
+    expect(flushed.body.deletedRecords.monthlyTargets).toBe(1);
+    expect(flushed.body.deletedRecords.emailLogs).toBeUndefined();
+    expect(await prisma.monthlyTarget.count()).toBe(0);
+    expect(await prisma.emailLog.count()).toBe(1);
+    expect((await prisma.emailLog.findFirstOrThrow()).requirementId).toBeNull();
+    expect(await prisma.item.count()).toBe(1);
+    expect(await prisma.company.count()).toBe(2);
+  });
+
   it("parses a purchase invoice and adds received stock", async () => {
     await createUser("admin@example.com", "ChangeMe123!", "Admin");
     const company = await createCompany({

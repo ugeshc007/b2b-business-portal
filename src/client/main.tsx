@@ -223,10 +223,78 @@ type SystemLogResponse = {
 
 type FlushResult = {
   flushed: boolean;
+  selectedCategories: string[];
   preserved: string[];
   deletedRecords: Record<string, number>;
   deletedFiles: Record<string, number>;
 };
+
+type FlushCategory = {
+  key: string;
+  title: string;
+  description: string;
+  dangerous?: boolean;
+};
+
+const flushCategoryOptions: FlushCategory[] = [
+  {
+    key: "transactions",
+    title: "Transactions",
+    description: "Workflow targets, requirements, quotations, purchase orders, invoices, and ecommerce/recharge orders.",
+  },
+  {
+    key: "communicationLogs",
+    title: "Communication Logs",
+    description: "Email logs and agent audit logs.",
+  },
+  {
+    key: "generatedFiles",
+    title: "Generated Files",
+    description: "Generated purchase order PDFs and invoice PDFs.",
+  },
+  {
+    key: "applicationLogs",
+    title: "Application Logs",
+    description: "Daily request/response log files.",
+  },
+  {
+    key: "businessTargets",
+    title: "Business Targets",
+    description: "Monthly turnover and business plan target entries.",
+  },
+  {
+    key: "stock",
+    title: "Stock Data",
+    description: "All company stock balances and stock links.",
+    dangerous: true,
+  },
+  {
+    key: "productMaster",
+    title: "Product Master",
+    description: "Imported and manually created products/items.",
+    dangerous: true,
+  },
+  {
+    key: "companyData",
+    title: "Company Data",
+    description: "Company profiles, addresses, VAT settings, bank details, and uploaded company logos.",
+    dangerous: true,
+  },
+  {
+    key: "emailConfiguration",
+    title: "Email Configuration",
+    description: "SMTP/IMAP/OAuth settings and company email integration rows.",
+    dangerous: true,
+  },
+  {
+    key: "users",
+    title: "Users",
+    description: "Deletes extra users and keeps the first admin user for login safety.",
+    dangerous: true,
+  },
+];
+
+const defaultFlushCategoryKeys = ["transactions", "communicationLogs", "generatedFiles", "applicationLogs"];
 
 type View = "overview" | "stock" | "ecommerce" | "workflow" | "invoices" | "settings";
 
@@ -380,6 +448,7 @@ function App() {
   const [systemLogLevel, setSystemLogLevel] = useState("ERROR");
   const [systemLogs, setSystemLogs] = useState<SystemLogResponse | null>(null);
   const [flushResult, setFlushResult] = useState<FlushResult | null>(null);
+  const [selectedFlushCategories, setSelectedFlushCategories] = useState<string[]>(defaultFlushCategoryKeys);
 
   async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const response = await fetch(`${apiUrl}${path}`, {
@@ -801,22 +870,36 @@ function App() {
     });
   }
 
-  function flushTransactionalData() {
+  function toggleFlushCategory(categoryKey: string) {
+    setSelectedFlushCategories((current) =>
+      current.includes(categoryKey) ? current.filter((key) => key !== categoryKey) : [...current, categoryKey]
+    );
+  }
+
+  function flushSelectedData() {
+    const selectedOptions = flushCategoryOptions.filter((option) => selectedFlushCategories.includes(option.key));
+    if (selectedOptions.length === 0) {
+      setMessage("Select at least one data category to flush.");
+      return;
+    }
     setConfirmationToast({
-      title: "Flush transactional data?",
-      message: "This will clear workflows, invoices, purchase orders, ecommerce orders, email logs, agent audit logs, generated PDFs, and system logs. Companies, products, stock, users, and email configuration will remain.",
-      confirmLabel: "Flush Data",
-      danger: true,
+      title: "Flush selected data?",
+      message: `This will clear: ${selectedOptions.map((option) => option.title).join(", ")}. Unselected categories will remain.`,
+      confirmLabel: "Flush Selected",
+      danger: selectedOptions.some((option) => option.dangerous),
       onConfirm: async () => {
         setLoading(true);
         try {
-          const result = await request<FlushResult>("/api/maintenance/flush-transactional-data", { method: "POST" });
+          const result = await request<FlushResult>("/api/maintenance/flush-transactional-data", {
+            method: "POST",
+            body: JSON.stringify({ categories: selectedFlushCategories }),
+          });
           setFlushResult(result);
           setSystemLogs(null);
-          setMessage("Transactional data and logs flushed.");
+          setMessage("Selected data flushed.");
           await loadSummary();
         } catch (error) {
-          setMessage(error instanceof Error ? error.message : "Could not flush transactional data");
+          setMessage(error instanceof Error ? error.message : "Could not flush selected data");
         } finally {
           setLoading(false);
         }
@@ -2528,18 +2611,48 @@ function App() {
               <div className="settings-section maintenance-section">
                 <div className="maintenance-card">
                   <div>
-                    <strong>Flush Transactional Data</strong>
-                    <span>Clears workflow transactions, invoices, purchase orders, ecommerce orders, email logs, agent audit logs, generated PDFs, and application log files.</span>
-                    <span>Preserves company profiles, product master, stock, users, email configuration, and app settings.</span>
+                    <strong>Flush Selected Data</strong>
+                    <span>Select exactly which user-entered data categories should be cleared.</span>
+                    <span>Safe defaults are selected. Company, product, stock, email, and user data stay unchecked until you choose them.</span>
                   </div>
-                  <button type="button" className="danger-button" disabled={loading} onClick={flushTransactionalData}>
-                    <Trash2 size={17} /> Flush Data
+                  <button type="button" className="secondary-button" disabled={loading} onClick={() => setSelectedFlushCategories(defaultFlushCategoryKeys)}>
+                    <RefreshCcw size={17} /> Safe Default
+                  </button>
+                </div>
+
+                <div className="flush-category-grid">
+                  {flushCategoryOptions.map((option) => (
+                    <label key={option.key} className={option.dangerous ? "checkbox-row danger-check" : "checkbox-row"}>
+                      <input
+                        type="checkbox"
+                        checked={selectedFlushCategories.includes(option.key)}
+                        onChange={() => toggleFlushCategory(option.key)}
+                      />
+                      <span>
+                        <strong>{option.title}</strong>
+                        <small>{option.description}</small>
+                      </span>
+                      {option.dangerous && <em>Danger</em>}
+                    </label>
+                  ))}
+                </div>
+
+                <div className="maintenance-action-row">
+                  <span>
+                    Selected: {flushCategoryOptions
+                      .filter((option) => selectedFlushCategories.includes(option.key))
+                      .map((option) => option.title)
+                      .join(", ") || "None"}
+                  </span>
+                  <button type="button" className="danger-button" disabled={loading || selectedFlushCategories.length === 0} onClick={flushSelectedData}>
+                    <Trash2 size={17} /> Flush Selected Data
                   </button>
                 </div>
 
                 {flushResult && (
                   <div className="config-status ready">
                     <strong>Flush Complete</strong>
+                    <span>Selected categories: {flushResult.selectedCategories.join(", ")}</span>
                     <span>Records deleted: {Object.entries(flushResult.deletedRecords).map(([key, value]) => `${key} ${value}`).join(", ")}</span>
                     <span>Files deleted: {Object.entries(flushResult.deletedFiles).map(([key, value]) => `${key} ${value}`).join(", ")}</span>
                     <span>Preserved: {flushResult.preserved.join(", ")}</span>
