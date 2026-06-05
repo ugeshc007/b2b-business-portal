@@ -483,6 +483,8 @@ function App() {
   const [systemLogs, setSystemLogs] = useState<SystemLogResponse | null>(null);
   const [flushResult, setFlushResult] = useState<FlushResult | null>(null);
   const [selectedFlushCategories, setSelectedFlushCategories] = useState<string[]>(defaultFlushCategoryKeys);
+  const [flushStatus, setFlushStatus] = useState("Waiting for category selection");
+  const [flushProgress, setFlushProgress] = useState(0);
 
   async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const response = await fetch(`${apiUrl}${path}`, {
@@ -971,6 +973,14 @@ function App() {
     );
   }
 
+  function flushTotals(result: FlushResult | null) {
+    if (!result) return { records: 0, files: 0 };
+    return {
+      records: Object.values(result.deletedRecords).reduce((sum, value) => sum + value, 0),
+      files: Object.values(result.deletedFiles).reduce((sum, value) => sum + value, 0),
+    };
+  }
+
   function flushSelectedData() {
     const selectedOptions = flushCategoryOptions.filter((option) => selectedFlushCategories.includes(option.key));
     if (selectedOptions.length === 0) {
@@ -983,17 +993,26 @@ function App() {
       confirmLabel: "Flush Selected",
       danger: selectedOptions.some((option) => option.dangerous),
       onConfirm: async () => {
+        setFlushResult(null);
+        setFlushStatus(`Deleting ${selectedOptions.length} selected categories...`);
+        setFlushProgress(30);
         setLoading(true);
         try {
+          setFlushProgress(60);
           const result = await request<FlushResult>("/api/maintenance/flush-transactional-data", {
             method: "POST",
             body: JSON.stringify({ categories: selectedFlushCategories }),
           });
           setFlushResult(result);
           setSystemLogs(null);
-          setMessage("Selected data flushed.");
+          const totals = flushTotals(result);
+          setFlushProgress(100);
+          setFlushStatus(`Successfully deleted ${totals.records} records and ${totals.files} files.`);
+          setMessage(`Selected data flushed successfully: ${totals.records} records and ${totals.files} files deleted.`);
           await loadSummary();
         } catch (error) {
+          setFlushProgress(0);
+          setFlushStatus("Flush failed. Check selected category and logs.");
           setMessage(error instanceof Error ? error.message : "Could not flush selected data");
         } finally {
           setLoading(false);
@@ -2780,12 +2799,35 @@ function App() {
                   </button>
                 </div>
 
+                <div className="flush-progress-card">
+                  <div>
+                    <strong>Delete Progress</strong>
+                    <span>{flushStatus}</span>
+                  </div>
+                  <div className="progress-track">
+                    <span style={{ width: `${flushProgress}%` }} />
+                  </div>
+                </div>
+
                 {flushResult && (
                   <div className="config-status ready">
                     <strong>Flush Complete</strong>
+                    <span>Successfully deleted {flushTotals(flushResult).records} records and {flushTotals(flushResult).files} files.</span>
                     <span>Selected categories: {flushResult.selectedCategories.join(", ")}</span>
-                    <span>Records deleted: {Object.entries(flushResult.deletedRecords).map(([key, value]) => `${key} ${value}`).join(", ")}</span>
-                    <span>Files deleted: {Object.entries(flushResult.deletedFiles).map(([key, value]) => `${key} ${value}`).join(", ")}</span>
+                    <div className="flush-count-grid">
+                      <div>
+                        <strong>Records Deleted</strong>
+                        {Object.entries(flushResult.deletedRecords).length
+                          ? Object.entries(flushResult.deletedRecords).map(([key, value]) => <span key={key}>{key}: {value}</span>)
+                          : <span>No records selected</span>}
+                      </div>
+                      <div>
+                        <strong>Files Deleted</strong>
+                        {Object.entries(flushResult.deletedFiles).length
+                          ? Object.entries(flushResult.deletedFiles).map(([key, value]) => <span key={key}>{key}: {value}</span>)
+                          : <span>No files selected</span>}
+                      </div>
+                    </div>
                     <span>Preserved: {flushResult.preserved.join(", ")}</span>
                   </div>
                 )}

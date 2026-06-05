@@ -260,6 +260,41 @@ textarea {
   color: #56635b;
 }
 
+.flush-progress-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #d8dfda;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.flush-progress-card div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.flush-progress-card span {
+  color: #66756a;
+}
+
+.flush-count-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.flush-count-grid div {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid #d8dfda;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
 .toast-overlay {
   position: fixed;
   inset: 0;
@@ -279,6 +314,10 @@ textarea {
   .maintenance-action-row {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .flush-count-grid {
+    grid-template-columns: 1fr;
   }
 }
 
