@@ -7,6 +7,7 @@ export async function createCompany(data: {
   name: string;
   legalName: string;
   role?: "BUYER" | "SELLER" | "BOTH";
+  managedByCompanyId?: string;
   trn?: string;
   location: string;
   email: string;
@@ -20,8 +21,12 @@ export async function createCompany(data: {
   bankCid?: string;
   bankBranch?: string;
 }) {
+  if (data.managedByCompanyId) {
+    const owner = await prisma.company.findUnique({ where: { id: data.managedByCompanyId } });
+    if (!owner) throw new Error("Managed under company not found");
+  }
   return prisma.company.create({
-    data: { ...data, active: data.active ?? true, vatEnabled: data.vatEnabled ?? true, role: data.role ?? "BOTH" },
+    data: { ...data, managedByCompanyId: data.managedByCompanyId || null, active: data.active ?? true, vatEnabled: data.vatEnabled ?? true, role: data.role ?? "BOTH" },
   });
 }
 
@@ -29,6 +34,7 @@ export async function updateCompany(companyId: string, data: {
   name: string;
   legalName: string;
   role?: "BUYER" | "SELLER" | "BOTH";
+  managedByCompanyId?: string;
   trn?: string;
   location: string;
   email: string;
@@ -44,6 +50,11 @@ export async function updateCompany(companyId: string, data: {
 }) {
   const company = await prisma.company.findUnique({ where: { id: companyId } });
   if (!company) throw new Error("Company not found");
+  if (data.managedByCompanyId === companyId) throw new Error("A company cannot be managed under itself");
+  if (data.managedByCompanyId) {
+    const owner = await prisma.company.findUnique({ where: { id: data.managedByCompanyId } });
+    if (!owner) throw new Error("Managed under company not found");
+  }
 
   return prisma.company.update({
     where: { id: companyId },
@@ -51,6 +62,7 @@ export async function updateCompany(companyId: string, data: {
       name: data.name,
       legalName: data.legalName,
       role: data.role ?? company.role,
+      managedByCompanyId: data.managedByCompanyId || null,
       trn: data.trn || null,
       location: data.location,
       email: data.email,

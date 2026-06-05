@@ -43,6 +43,7 @@ model Company {
   legalName String
   trn       String?
   role      CompanyRole @default(BOTH)
+  managedByCompanyId String?
   location  String
   email     String      @unique
   active    Boolean     @default(true)
@@ -55,6 +56,9 @@ model Company {
   bankCid               String?
   bankBranch            String?
   createdAt DateTime    @default(now())
+
+  managedByCompany Company? @relation("ManagedPartners", fields: [managedByCompanyId], references: [id])
+  managedPartners Company[] @relation("ManagedPartners")
 
   stocks         Stock[]
   buyerTargets   MonthlyTarget[] @relation("BuyerTargets")

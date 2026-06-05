@@ -190,6 +190,12 @@ describe("api", () => {
 
   it("creates a company profile with bank details through the protected API", async () => {
     await createUser("admin@example.com", "ChangeMe123!", "Admin");
+    const owner = await createCompany({
+      name: "Owner Company",
+      legalName: "Owner Company LLC",
+      location: "Dubai, UAE",
+      email: "owner-company@example.com",
+    });
     const login = await request(app)
       .post("/api/auth/login")
       .send({ email: "admin@example.com", password: "ChangeMe123!" })
@@ -202,6 +208,7 @@ describe("api", () => {
         name: "New Company",
         legalName: "New Company Trading LLC",
         role: "BUYER",
+        managedByCompanyId: owner.id,
         location: "Abu Dhabi, UAE",
         email: "new-company@example.com",
         active: true,
@@ -216,6 +223,7 @@ describe("api", () => {
 
     expect(created.body.name).toBe("New Company");
     expect(created.body.role).toBe("BUYER");
+    expect(created.body.managedByCompanyId).toBe(owner.id);
     expect(created.body.active).toBe(true);
     expect(created.body.vatEnabled).toBe(false);
     expect(created.body.bankName).toBe("RAK Bank");
@@ -226,9 +234,12 @@ describe("api", () => {
       .set("Authorization", `Bearer ${login.body.token}`)
       .expect(200);
 
-    expect(summary.body.companies[0].legalName).toBe("New Company Trading LLC");
-    expect(summary.body.companies[0].role).toBe("BUYER");
-    expect(summary.body.companies[0].vatEnabled).toBe(false);
+    const partner = summary.body.companies.find((company: { id: string }) => company.id === created.body.id);
+    expect(partner.legalName).toBe("New Company Trading LLC");
+    expect(partner.role).toBe("BUYER");
+    expect(partner.managedByCompanyId).toBe(owner.id);
+    expect(partner.managedByCompany.name).toBe("Owner Company");
+    expect(partner.vatEnabled).toBe(false);
 
     const updated = await request(app)
       .patch(`/api/catalog/companies/${created.body.id}`)
@@ -237,6 +248,7 @@ describe("api", () => {
         name: "New Company",
         legalName: "New Company Trading LLC",
         role: "SELLER",
+        managedByCompanyId: owner.id,
         location: "Abu Dhabi, UAE",
         email: "new-company@example.com",
         active: true,
@@ -245,6 +257,7 @@ describe("api", () => {
       .expect(200);
 
     expect(updated.body.role).toBe("SELLER");
+    expect(updated.body.managedByCompanyId).toBe(owner.id);
   });
 
   it("uploads a company logo and exposes the preview path", async () => {

@@ -20,6 +20,7 @@ catalogRouter.post("/companies", async (req, res, next) => {
       name: z.string().min(2),
       legalName: z.string().min(2),
       role: z.enum(["BUYER", "SELLER", "BOTH"]).optional(),
+      managedByCompanyId: z.string().optional().or(z.literal("")),
       trn: z.string().optional(),
       location: z.string().min(2),
       email: z.string().email(),
@@ -45,6 +46,7 @@ catalogRouter.patch("/companies/:id", async (req, res, next) => {
       name: z.string().min(2),
       legalName: z.string().min(2),
       role: z.enum(["BUYER", "SELLER", "BOTH"]).optional(),
+      managedByCompanyId: z.string().optional().or(z.literal("")),
       trn: z.string().optional().or(z.literal("")),
       location: z.string().min(2),
       email: z.string().email(),
@@ -60,6 +62,7 @@ catalogRouter.patch("/companies/:id", async (req, res, next) => {
     }).parse(req.body);
     res.json(await updateCompany(req.params.id, {
       ...input,
+      managedByCompanyId: input.managedByCompanyId || undefined,
       trn: input.trn || undefined,
       logoPath: input.logoPath || undefined,
       bankName: input.bankName || undefined,

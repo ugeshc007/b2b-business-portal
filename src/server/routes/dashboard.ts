@@ -9,7 +9,7 @@ dashboardRouter.use(requireAuth);
 dashboardRouter.get("/summary", async (_req, res, next) => {
   try {
     const [companies, items, targets, requirements, quotations, orders, invoices, emails, stock, emailIntegrations, turnoverTargets, agentAuditLogs, ecommerceOrders] = await Promise.all([
-      prisma.company.findMany(),
+      prisma.company.findMany({ include: { managedByCompany: true } }),
       prisma.item.findMany(),
       prisma.monthlyTarget.findMany({
         include: {

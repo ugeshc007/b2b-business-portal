@@ -15,6 +15,8 @@ type Company = {
   name: string;
   legalName: string;
   role?: "BUYER" | "SELLER" | "BOTH";
+  managedByCompanyId?: string | null;
+  managedByCompany?: { id: string; name: string; legalName: string } | null;
   email: string;
   location: string;
   trn?: string;
@@ -346,6 +348,10 @@ function canBeCustomer(company: Company) {
 
 function canBeVendor(company: Company) {
   return company.role === "SELLER" || company.role === "BOTH" || !company.role;
+}
+
+function isPartnerForCompany(company: Company, ownerCompanyId: string) {
+  return company.id === ownerCompanyId || company.managedByCompanyId === ownerCompanyId;
 }
 
 function dateInputValue(date = new Date()) {
@@ -689,6 +695,7 @@ function App() {
           name: profileName,
           legalName: profileLegalName,
           role: currentCompany?.role ?? "BOTH",
+          managedByCompanyId: currentCompany?.managedByCompanyId ?? undefined,
           location: profileLocation,
           email: profileEmail,
           trn: profileTrn || undefined,
@@ -710,6 +717,7 @@ function App() {
     const name = String(form.get("name") ?? "").trim();
     const legalName = String(form.get("legalName") ?? "").trim();
     const role = String(form.get("role") ?? "BOTH") as "BUYER" | "SELLER" | "BOTH";
+    const managedByCompanyId = String(form.get("managedByCompanyId") ?? "").trim();
     const location = String(form.get("location") ?? "").trim();
     const emailValue = String(form.get("email") ?? "").trim();
     const trn = String(form.get("trn") ?? "").trim();
@@ -734,6 +742,7 @@ function App() {
           name,
           legalName,
           role,
+          managedByCompanyId,
           location,
           email: emailValue,
           trn: trn || undefined,
@@ -763,6 +772,7 @@ function App() {
     const name = String(form.get("name") ?? "").trim();
     const legalName = String(form.get("legalName") ?? "").trim();
     const role = String(form.get("role") ?? "BOTH") as "BUYER" | "SELLER" | "BOTH";
+    const managedByCompanyId = String(form.get("managedByCompanyId") ?? "").trim();
     const location = String(form.get("location") ?? "").trim();
     const emailValue = String(form.get("email") ?? "").trim();
     const trn = String(form.get("trn") ?? "").trim();
@@ -787,6 +797,7 @@ function App() {
           name,
           legalName,
           role,
+          managedByCompanyId,
           location,
           email: emailValue,
           trn: trn || undefined,
@@ -1895,9 +1906,11 @@ function App() {
     }
   }
 
+  const activeCompanies = (summary?.companies ?? []).filter((company) => company.active !== false);
+  const portalOwnerCompany = companyScopeId === "ALL" ? null : (summary?.companies ?? []).find((company) => company.id === companyScopeId) ?? null;
   const scopedCompanies = companyScopeId === "ALL"
     ? summary?.companies ?? []
-    : (summary?.companies ?? []).filter((company) => company.id === companyScopeId);
+    : (summary?.companies ?? []).filter((company) => isPartnerForCompany(company, companyScopeId));
   const scopedCompanyEmails = new Set(scopedCompanies.map((company) => company.email));
   const scopedStock = companyScopeId === "ALL"
     ? summary?.stock ?? []
@@ -1934,7 +1947,6 @@ function App() {
   const scopedEcommerceOrders = companyScopeId === "ALL"
     ? summary?.ecommerceOrders ?? []
     : (summary?.ecommerceOrders ?? []).filter((order) => order.buyerCompany.id === companyScopeId || order.sellerCompany.id === companyScopeId);
-  const activeCompanies = (summary?.companies ?? []).filter((company) => company.active !== false);
   const activePortalLinks: Array<{ href: string; label: string }> = [];
   const fallbackPortalLinks = [
     { href: "/dealz", label: "Dealz" },
@@ -1951,9 +1963,14 @@ function App() {
   }
   const sidebarPortalLinks = summary ? activePortalLinks : fallbackPortalLinks;
   const visibleCompanyOptions = isCompanyPortal ? scopedCompanies : activeCompanies;
-  const allCustomerCompanyOptions = (summary?.companies ?? []).filter((company) => company.active !== false).filter(canBeCustomer);
-  const allVendorCompanyOptions = (summary?.companies ?? []).filter((company) => company.active !== false).filter(canBeVendor);
-  const settingsCompanyOptions = summary?.companies ?? [];
+  const partnerCompanyOptions = portalOwnerCompany
+    ? activeCompanies.filter((company) => isPartnerForCompany(company, portalOwnerCompany.id))
+    : activeCompanies;
+  const allCustomerCompanyOptions = partnerCompanyOptions.filter(canBeCustomer);
+  const allVendorCompanyOptions = partnerCompanyOptions.filter(canBeVendor);
+  const settingsCompanyOptions = portalOwnerCompany
+    ? (summary?.companies ?? []).filter((company) => isPartnerForCompany(company, portalOwnerCompany.id))
+    : summary?.companies ?? [];
   const workflowSellerId = workflowDirection === "PURCHASE" ? workflowCounterpartyId : workflowCompanyId;
   const workflowProductOptions = (summary?.items ?? []).map((item) => {
     const stock = (summary?.stock ?? []).find((entry) => entry.company.id === workflowSellerId && entry.item.id === item.id);
@@ -2244,6 +2261,15 @@ function App() {
                         </select>
                       </label>
                       <label>
+                        Managed Under Company
+                        <select name="managedByCompanyId" defaultValue={portalOwnerCompany?.id ?? ""}>
+                          <option value="">Main company / no owner</option>
+                          {activeCompanies.map((company) => (
+                            <option value={company.id} key={company.id}>{company.name}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
                         TRN / Tax Number
                         <input name="trn" placeholder="Optional" />
                       </label>
@@ -2296,7 +2322,7 @@ function App() {
                       {settingsCompanyOptions.filter(canBeCustomer).map((company) => (
                         <div className="row" key={`customer-${company.id}`}>
                           <span>{company.name}</span>
-                          <span>{company.email}</span>
+                          <span>{company.managedByCompany ? `Under ${company.managedByCompany.name}` : "Main company"}</span>
                           <span className={`status-badge ${company.active === false ? "stopped" : "completed"}`}>{company.active === false ? "Inactive" : "Active"}</span>
                         </div>
                       ))}
@@ -2312,7 +2338,7 @@ function App() {
                       {settingsCompanyOptions.filter(canBeVendor).map((company) => (
                         <div className="row" key={`vendor-${company.id}`}>
                           <span>{company.name}</span>
-                          <span>{company.email}</span>
+                          <span>{company.managedByCompany ? `Under ${company.managedByCompany.name}` : "Main company"}</span>
                           <span className={`status-badge ${company.active === false ? "stopped" : "completed"}`}>{company.active === false ? "Inactive" : "Active"}</span>
                         </div>
                       ))}
@@ -2335,6 +2361,7 @@ function App() {
                           </div>
                         </div>
                         <div className="company-card-summary-actions">
+                          {company.managedByCompany && <span className="muted-text">Under {company.managedByCompany.name}</span>}
                           <span className="status-badge open">{roleLabel(company.role)}</span>
                           <span className={`status-badge ${company.active === false ? "stopped" : "completed"}`}>{company.active === false ? "Inactive" : "Active"}</span>
                           <button type="button" className="secondary-button" onClick={() => toggleCompanyExpanded(company.id)}>
@@ -2372,6 +2399,17 @@ function App() {
                                 <option value="BUYER">Customer</option>
                                 <option value="SELLER">Vendor</option>
                                 <option value="BOTH">Customer & Vendor</option>
+                              </select>
+                            </label>
+                            <label>
+                              Managed Under Company
+                              <select name="managedByCompanyId" defaultValue={company.managedByCompanyId ?? ""}>
+                                <option value="">Main company / no owner</option>
+                                {activeCompanies
+                                  .filter((owner) => owner.id !== company.id)
+                                  .map((owner) => (
+                                    <option value={owner.id} key={owner.id}>{owner.name}</option>
+                                  ))}
                               </select>
                             </label>
                             <label>
@@ -2440,6 +2478,7 @@ function App() {
                                       name: company.name,
                                       legalName: company.legalName,
                                       role: company.role ?? "BOTH",
+                                      managedByCompanyId: company.managedByCompanyId ?? undefined,
                                       location: company.location,
                                       email: company.email,
                                       trn: company.trn || undefined,

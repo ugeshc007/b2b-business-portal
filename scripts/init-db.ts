@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS Company (
   legalName TEXT NOT NULL,
   trn TEXT,
   role TEXT NOT NULL DEFAULT 'BOTH',
+  managedByCompanyId TEXT,
   location TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE,
   active BOOLEAN NOT NULL DEFAULT true,
@@ -50,7 +51,8 @@ CREATE TABLE IF NOT EXISTS Company (
   bankIban TEXT,
   bankCid TEXT,
   bankBranch TEXT,
-  createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (managedByCompanyId) REFERENCES Company(id) ON DELETE SET NULL ON UPDATE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS Item (
@@ -339,6 +341,10 @@ const companyColumns = db.prepare("PRAGMA table_info(Company)").all() as Array<{
 if (!companyColumns.some((column) => column.name === "role")) {
   db.exec("ALTER TABLE Company ADD COLUMN role TEXT NOT NULL DEFAULT 'BOTH';");
 }
+if (!companyColumns.some((column) => column.name === "managedByCompanyId")) {
+  db.exec("ALTER TABLE Company ADD COLUMN managedByCompanyId TEXT;");
+}
+db.exec("CREATE INDEX IF NOT EXISTS Company_managedByCompanyId_idx ON Company(managedByCompanyId);");
 if (!companyColumns.some((column) => column.name === "active")) {
   db.exec("ALTER TABLE Company ADD COLUMN active BOOLEAN NOT NULL DEFAULT true;");
 }
