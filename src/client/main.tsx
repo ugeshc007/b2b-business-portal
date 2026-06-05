@@ -375,17 +375,25 @@ function mediaUrl(path?: string | null, cacheKey?: string | number | null) {
 }
 
 function CompanyLogoPreview({ company }: { company: Company }) {
-  const [broken, setBroken] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    setBroken(false);
+    setFailed(false);
+    setAttempt(0);
   }, [company.logoPath]);
 
-  if (!company.logoPath || broken) return <Building2 size={24} />;
+  if (!company.logoPath || failed) return <Building2 size={24} />;
   return (
     <img
-      src={mediaUrl(company.logoPath, company.logoPath)}
+      src={mediaUrl(company.logoPath, `${company.logoPath}-${attempt}`)}
       alt={`${company.name} logo`}
-      onError={() => setBroken(true)}
+      onError={() => {
+        if (attempt < 3) {
+          window.setTimeout(() => setAttempt((current) => current + 1), 350);
+          return;
+        }
+        setFailed(true);
+      }}
     />
   );
 }
@@ -2403,6 +2411,15 @@ function App() {
                                 <span className="muted-text">PNG, JPG, or WEBP. Used in PO and invoice PDFs.</span>
                               </span>
                             </label>
+                            <div className="company-logo-expanded-preview">
+                              <div className="company-logo-preview large">
+                                <CompanyLogoPreview company={company} />
+                              </div>
+                              <span>
+                                <strong>Logo Preview</strong>
+                                <small>{company.logoPath ? `Saved in DB: ${company.logoPath}` : "No logo saved yet"}</small>
+                              </span>
+                            </div>
                             <label>
                               Display Name
                               <input name="name" defaultValue={company.name} />
