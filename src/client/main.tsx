@@ -1764,6 +1764,8 @@ function App() {
   const scopedStock = companyScopeId === "ALL"
     ? summary?.stock ?? []
     : (summary?.stock ?? []).filter((stock) => stock.company.id === companyScopeId);
+  const productMasterRows = summary?.items ?? [];
+  const stockItemIds = new Set(scopedStock.map((stock) => stock.item.id));
   const ecommerceProductRows = (summary?.stock ?? [])
     .filter((stock) => stock.quantity > 0)
     .filter((stock) => companyScopeId === "ALL" || stock.company.id !== companyScopeId);
@@ -2728,8 +2730,46 @@ function App() {
               <div className="config-status ready stock-import-result">
                 <strong>Product Import Complete</strong>
                 <span>{productPriceImportResult.created} created, {productPriceImportResult.updated} updated, {productPriceImportResult.skipped} skipped.</span>
+                <span>Showing latest imported rows below. Full product master contains {(summary?.items ?? []).length} products.</span>
+                <div className="imported-product-list">
+                  {productPriceImportResult.rows.slice(0, 12).map((row) => (
+                    <span key={row.sku}>{row.sku} - {row.name} - {money(row.sellingPrice)}</span>
+                  ))}
+                  {productPriceImportResult.rows.length > 12 && <span>+ {productPriceImportResult.rows.length - 12} more products in Product Master.</span>}
+                </div>
               </div>
             )}
+
+            <div className="table-section-title">
+              <strong>Product Master</strong>
+              <span>{productMasterRows.length} products imported/created</span>
+            </div>
+            <div className="table product-master-table">
+              {productMasterRows.map((item) => (
+                <div className="row" key={item.id}>
+                  <span>
+                    <strong>{item.sku}</strong>
+                    <small>{item.name}</small>
+                  </span>
+                  <span>{item.unit}</span>
+                  <span>{money(item.expectedPrice)}</span>
+                  <span>{stockItemIds.has(item.id) ? "Stock row exists" : "No stock row yet"}</span>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    disabled={loading}
+                    onClick={() => {
+                      setStockItemId(item.id);
+                      setStockCompanyId(stockCompanyId || visibleCompanyOptions[0]?.id || "");
+                      setStockQuantity("0");
+                    }}
+                  >
+                    <Plus size={16} /> Add Stock
+                  </button>
+                </div>
+              ))}
+              {!productMasterRows.length && <div className="empty-state">No products imported yet.</div>}
+            </div>
 
             <form className="stock-form" onSubmit={saveStock}>
               <label>

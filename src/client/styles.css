@@ -993,6 +993,23 @@ nav .nav-button.active {
   margin: 16px;
 }
 
+.imported-product-list {
+  display: grid;
+  gap: 4px;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.product-master-table .row {
+  grid-template-columns: 1.4fr 0.4fr 0.6fr 0.8fr auto;
+}
+
+.product-master-table small {
+  display: block;
+  margin-top: 3px;
+  color: #66756a;
+}
+
 .tool-box {
   display: grid;
   gap: 10px;
