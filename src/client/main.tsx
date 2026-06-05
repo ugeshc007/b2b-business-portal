@@ -391,6 +391,7 @@ function App() {
   const [productPriceImportResult, setProductPriceImportResult] = useState<BusinessPlanProductImportResult | null>(null);
   const [productImportStatus, setProductImportStatus] = useState("Waiting for product file");
   const [productImportProgress, setProductImportProgress] = useState(0);
+  const [showProductImportProgress, setShowProductImportProgress] = useState(false);
   const [stockLocalMessage, setStockLocalMessage] = useState("");
   const [expandedCompanyIds, setExpandedCompanyIds] = useState<string[]>([]);
   const [companyScopeId, setCompanyScopeId] = useState("ALL");
@@ -850,6 +851,7 @@ function App() {
       setMessage("Select a product price Excel file first.");
       return;
     }
+    setShowProductImportProgress(true);
     setProductImportStatus("Reading Excel file and preparing preview...");
     setProductImportProgress(35);
     setLoading(true);
@@ -882,6 +884,7 @@ function App() {
       setMessage("Select a product price Excel file first.");
       return;
     }
+    setShowProductImportProgress(true);
     setProductImportStatus("Importing products into database...");
     setProductImportProgress(65);
     setLoading(true);
@@ -2887,11 +2890,13 @@ function App() {
                     type="file"
                     accept=".xlsx,.xls,.xlsb,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
                     onChange={(event) => {
-                      setProductPriceFile(event.currentTarget.files?.[0] ?? null);
+                      const selectedFile = event.currentTarget.files?.[0] ?? null;
+                      setProductPriceFile(selectedFile);
                       setProductPricePreview(null);
                       setProductPriceImportResult(null);
-                      setProductImportProgress(event.currentTarget.files?.[0] ? 10 : 0);
-                      setProductImportStatus(event.currentTarget.files?.[0] ? "File selected. Preview before import." : "Waiting for product file");
+                      setShowProductImportProgress(Boolean(selectedFile));
+                      setProductImportProgress(selectedFile ? 10 : 0);
+                      setProductImportStatus(selectedFile ? "File selected. Preview before import." : "Waiting for product file");
                     }}
                   />
                 </label>
@@ -2903,15 +2908,17 @@ function App() {
               </form>
             </section>
 
-            <div className="import-progress-card">
-              <div>
-                <strong>Import Progress</strong>
-                <span>{productImportStatus}</span>
+            {showProductImportProgress && (
+              <div className="import-progress-card">
+                <div>
+                  <strong>Import Progress</strong>
+                  <span>{productImportStatus}</span>
+                </div>
+                <div className="progress-track">
+                  <span style={{ width: `${productImportProgress}%` }} />
+                </div>
               </div>
-              <div className="progress-track">
-                <span style={{ width: `${productImportProgress}%` }} />
-              </div>
-            </div>
+            )}
 
             {productPricePreview && (
               <section className="stock-product-preview">
