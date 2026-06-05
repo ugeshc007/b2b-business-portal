@@ -12,6 +12,7 @@ import { dashboardRouter } from "./routes/dashboard";
 import { invoiceRouter } from "./routes/invoices";
 import { emailIntegrationRouter } from "./routes/emailIntegrations";
 import { ecommerceRouter } from "./routes/ecommerce";
+import { businessPlanImportRouter } from "./routes/businessPlanImport";
 import { prisma } from "./db";
 import { env } from "./env";
 
@@ -52,6 +53,7 @@ export function createApp() {
   app.use("/api/invoices", invoiceRouter);
   app.use("/api/email-integrations", emailIntegrationRouter);
   app.use("/api/ecommerce", ecommerceRouter);
+  app.use("/api/business-plan-import", businessPlanImportRouter);
 
   app.use("/uploads/company-logos", express.static(path.resolve(process.cwd(), "storage", "company-logos")));
 

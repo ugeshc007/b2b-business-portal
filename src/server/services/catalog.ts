@@ -160,6 +160,13 @@ export async function setStock(companyId: string, itemId: string, quantity: numb
   });
 }
 
+export async function deleteStock(stockId: string) {
+  const stock = await prisma.stock.findUnique({ where: { id: stockId } });
+  if (!stock) throw new Error("Stock row not found");
+  await prisma.stock.delete({ where: { id: stockId } });
+  return { deleted: true };
+}
+
 export async function bulkUpsertStock(input: {
   companyId: string;
   mode: "SET" | "ADD";

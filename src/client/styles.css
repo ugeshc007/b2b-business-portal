@@ -549,6 +549,87 @@ nav .nav-button.active {
   gap: 10px;
 }
 
+.business-import-section {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+
+.business-import-form {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  padding: 14px;
+  border: 1px solid #d8dfda;
+  border-radius: 8px;
+  background: #fbfcfb;
+}
+
+.business-import-form label {
+  margin-top: 0;
+}
+
+.business-preview {
+  display: grid;
+  gap: 16px;
+}
+
+.preview-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.business-preview h3 {
+  margin: 0 0 10px;
+}
+
+.import-action-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid #b8cec1;
+  border-radius: 8px;
+  background: #fbfdfb;
+}
+
+.import-action-panel div {
+  display: grid;
+  gap: 4px;
+}
+
+.import-action-panel span {
+  color: #66756a;
+}
+
+.import-preview-table {
+  border: 1px solid #e1e7e3;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.import-preview-table .row {
+  align-items: start;
+}
+
+.import-preview-table small {
+  display: block;
+  color: #66756a;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.import-company-row {
+  grid-template-columns: 52px minmax(220px, 1.2fr) minmax(170px, 0.8fr) minmax(260px, 1.1fr) minmax(190px, 0.9fr);
+}
+
+.import-product-row {
+  grid-template-columns: minmax(260px, 1fr) 80px 130px 130px 130px;
+}
+
 .agent-task-form {
   display: grid;
   grid-template-columns: repeat(4, minmax(180px, 1fr));
@@ -752,10 +833,14 @@ nav .nav-button.active {
 
 .stock-tools {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 14px;
   padding: 16px;
   border-bottom: 1px solid #e1e7e3;
+}
+
+.stock-import-result {
+  margin: 16px;
 }
 
 .tool-box {

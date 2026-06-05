@@ -1,6 +1,7 @@
 import request from "supertest";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
+import * as XLSX from "xlsx";
 import { createApp } from "./app";
 import { createUser } from "./auth";
 import { createCompany, createItem, setStock } from "./services/catalog";
@@ -232,6 +233,145 @@ describe("api", () => {
     expect(summary.body.companies[0].logoPath).toBe(uploaded.body.logoPath);
   });
 
+  it("previews an uploaded business plan workbook without importing data", async () => {
+    await createUser("admin@example.com", "ChangeMe123!", "Admin");
+    const login = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "admin@example.com", password: "ChangeMe123!" })
+      .expect(200);
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([{
+      Index: 1,
+      "Company Name ": "Example Trading LLC; Email:example@example.com; Address:Dubai, UAE",
+      "Product specification ": "Electronic Card",
+      "Price for Buying and Selling ": "Check the Sheet E.Card",
+      "Customer (B2B)": "Retail customer",
+      "Vendor (B2B)": "Vendor A",
+      "Bank Account ": "Company Name: Example Trading LLC\nBank Name: Test Bank\nBeneficiary Account Name: Example Trading LLC\nAccount Number: 123\nIBAN Number: AE00123\nBranch: Dubai",
+      "Revenue Target Details in AED/Month ": "2 million",
+      "Targeted Number of Invoice /Week": "50-80 Invoice.Per Invoice below 10k",
+    }]), "Sheet1");
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([{
+      DenominationTitle: "Amazon UAE - 100",
+      Currency: "AED",
+      DENOMINATION: 100,
+      "Denomination in AED ": 100,
+      "BUYING PRICE": 96,
+      PROFIT: 4,
+      "%": 0.04,
+      "SELLING PRICE ": 99,
+    }]), "E.CARD");
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([{
+      "Company Name ": "EDGETECH DIGITAL FZE",
+      "Owner ": "Owner",
+      "Bank Account ": "Applying",
+    }]), "Sheet2");
+    const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
+
+    const preview = await request(app)
+      .post("/api/business-plan-import/preview")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+      .send(buffer)
+      .expect(200);
+
+    expect(preview.body.counts.companies).toBe(1);
+    expect(preview.body.counts.products).toBe(1);
+    expect(preview.body.counts.bankStatusRows).toBe(1);
+    expect(preview.body.companies[0].email).toBe("example@example.com");
+    expect(preview.body.companies[0].revenueTargetMin).toBe(2000000);
+    expect(preview.body.products[0].title).toBe("Amazon UAE - 100");
+  });
+
+  it("imports product price rows from the business plan product sheet", async () => {
+    await createUser("admin@example.com", "ChangeMe123!", "Admin");
+    const login = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "admin@example.com", password: "ChangeMe123!" })
+      .expect(200);
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([{
+      Index: 1,
+      "Company Name ": "Not Imported LLC; Email:not-imported@example.com; Address:Dubai",
+    }]), "Sheet1");
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([
+      {
+        DenominationTitle: "Amazon UAE - 100",
+        Currency: "AED",
+        DENOMINATION: 100,
+        "Denomination in AED ": 100,
+        "BUYING PRICE": 96,
+        PROFIT: 4,
+        "%": 0.04,
+        "SELLING PRICE ": 99,
+      },
+      {
+        DenominationTitle: "App Store US - 10",
+        Currency: "USD",
+        DENOMINATION: 10,
+        "Denomination in AED ": 39,
+        "BUYING PRICE": 34.5,
+        PROFIT: 4.5,
+        "%": 0.115,
+        "SELLING PRICE ": 37.05,
+      },
+    ]), "E.CARD");
+    const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
+
+    const imported = await request(app)
+      .post("/api/business-plan-import/import-products")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+      .send(buffer)
+      .expect(200);
+
+    expect(imported.body.created).toBe(2);
+    expect(imported.body.updated).toBe(0);
+    expect(imported.body.rows[0].sku).toBe("AMAZON-UAE-100");
+
+    const item = await prisma.item.findUnique({ where: { sku: "AMAZON-UAE-100" } });
+    expect(item?.name).toBe("Amazon UAE - 100");
+    expect(String(item?.unit)).toBe("code");
+    expect(Number(item?.minPrice)).toBe(96);
+    expect(Number(item?.expectedPrice)).toBe(99);
+    expect(Number(item?.maxPrice)).toBe(99);
+    expect(await prisma.company.count()).toBe(0);
+  });
+
+  it("imports product price rows from a separate product-only workbook", async () => {
+    await createUser("admin@example.com", "ChangeMe123!", "Admin");
+    const login = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "admin@example.com", password: "ChangeMe123!" })
+      .expect(200);
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([{
+      DenominationTitle: "Xbox UAE Top Up 50USD",
+      Currency: "USD",
+      DENOMINATION: 50,
+      "Denomination in AED ": 195,
+      "BUYING PRICE": 189.05,
+      PROFIT: 1.95,
+      "%": 0.01,
+      "SELLING PRICE ": 191,
+    }]), "Products");
+    const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
+
+    const imported = await request(app)
+      .post("/api/business-plan-import/import-products")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+      .send(buffer)
+      .expect(200);
+
+    expect(imported.body.created).toBe(1);
+    expect(imported.body.rows[0].sku).toBe("XBOX-UAE-TOP-UP-50USD");
+    expect(await prisma.item.count()).toBe(1);
+  });
+
   it("deletes a clean company and removes setup data", async () => {
     await createUser("admin@example.com", "ChangeMe123!", "Admin");
     const company = await createCompany({
@@ -399,6 +539,34 @@ describe("api", () => {
     expect(result.body.imported).toBe(2);
     expect(await prisma.item.count()).toBe(2);
     expect(await prisma.stock.count()).toBe(2);
+  });
+
+  it("deletes an existing stock row", async () => {
+    const company = await createCompany({
+      name: "Stock Delete Company",
+      legalName: "Stock Delete Company LLC",
+      location: "Dubai",
+      email: "stock-delete@example.com",
+    });
+    const item = await createItem({
+      sku: "STOCK-DELETE",
+      name: "Stock Delete Item",
+      unit: "code",
+      expectedPrice: 50,
+    });
+    const stock = await setStock(company.id, item.id, 9);
+    await createUser("admin@example.com", "ChangeMe123!", "Admin");
+    const login = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "admin@example.com", password: "ChangeMe123!" })
+      .expect(200);
+
+    await request(app)
+      .delete(`/api/catalog/stock/${stock.id}`)
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .expect(200);
+
+    expect(await prisma.stock.count()).toBe(0);
   });
 
   it("parses a purchase invoice and adds received stock", async () => {

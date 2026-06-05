@@ -1,7 +1,7 @@
 import express, { Router } from "express";
 import { z } from "zod";
 import { requireAuth } from "../middleware";
-import { bulkUpsertStock, createCompany, createItem, deleteCompany, listCatalog, parsePurchaseInvoiceText, parseStockCsv, saveCompanyLogo, setStock, updateCompany } from "../services/catalog";
+import { bulkUpsertStock, createCompany, createItem, deleteCompany, deleteStock, listCatalog, parsePurchaseInvoiceText, parseStockCsv, saveCompanyLogo, setStock, updateCompany } from "../services/catalog";
 
 export const catalogRouter = Router();
 catalogRouter.use(requireAuth);
@@ -119,6 +119,14 @@ catalogRouter.post("/stock", async (req, res, next) => {
       quantity: z.number().int().min(0),
     }).parse(req.body);
     res.status(201).json(await setStock(input.companyId, input.itemId, input.quantity));
+  } catch (error) {
+    next(error);
+  }
+});
+
+catalogRouter.delete("/stock/:id", async (req, res, next) => {
+  try {
+    res.json(await deleteStock(req.params.id));
   } catch (error) {
     next(error);
   }

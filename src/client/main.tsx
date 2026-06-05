@@ -134,6 +134,70 @@ type Summary = {
   ecommerceOrders: EcommerceOrder[];
 };
 
+type BusinessPlanPreview = {
+  workbook: {
+    sheetNames: string[];
+    companySheetFound: boolean;
+    productSheetFound: boolean;
+    bankStatusSheetFound: boolean;
+  };
+  counts: {
+    companies: number;
+    products: number;
+    bankStatusRows: number;
+    warnings: number;
+  };
+  companies: Array<{
+    index: string;
+    name: string;
+    email?: string;
+    address?: string;
+    customerRule?: string;
+    vendorRule?: string;
+    revenueTargetText?: string;
+    revenueTargetMin?: number;
+    revenueTargetMax?: number;
+    invoiceRuleText?: string;
+    invoiceCountMin?: number;
+    invoiceCountMax?: number;
+    invoiceValueHint?: string;
+    bank: {
+      status?: string;
+      bankName?: string;
+      beneficiaryName?: string;
+      accountNumber?: string;
+      iban?: string;
+      branch?: string;
+    };
+  }>;
+  products: Array<{
+    title: string;
+    currency?: string;
+    denominationAed?: number;
+    buyingPrice?: number;
+    sellingPrice?: number;
+    profit?: number;
+    marginPercent?: number;
+  }>;
+  bankStatusRows: Array<{ companyName: string; owner?: string; bankStatus?: string }>;
+  warnings: string[];
+  nextStep: string;
+};
+
+type BusinessPlanProductImportResult = {
+  created: number;
+  updated: number;
+  skipped: number;
+  rows: Array<{
+    sku: string;
+    name: string;
+    buyingPrice?: number;
+    sellingPrice: number;
+    status: "CREATED" | "UPDATED" | "SKIPPED";
+    reason?: string;
+  }>;
+};
+
 type View = "overview" | "stock" | "ecommerce" | "workflow" | "invoices" | "settings";
 
 function money(value: string | number) {
@@ -189,8 +253,13 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [agentRunning, setAgentRunning] = useState(false);
   const [activeView, setActiveView] = useState<View>("overview");
-  const [settingsTab, setSettingsTab] = useState<"company" | "email" | "log" | "audit">("company");
+  const [settingsTab, setSettingsTab] = useState<"company" | "businessImport" | "email" | "log" | "audit">("company");
   const [showCreateCompany, setShowCreateCompany] = useState(false);
+  const [businessPlanFile, setBusinessPlanFile] = useState<File | null>(null);
+  const [businessPlanPreview, setBusinessPlanPreview] = useState<BusinessPlanPreview | null>(null);
+  const [businessProductImportResult, setBusinessProductImportResult] = useState<BusinessPlanProductImportResult | null>(null);
+  const [productPriceFile, setProductPriceFile] = useState<File | null>(null);
+  const [productPriceImportResult, setProductPriceImportResult] = useState<BusinessPlanProductImportResult | null>(null);
   const [expandedCompanyIds, setExpandedCompanyIds] = useState<string[]>([]);
   const [companyScopeId, setCompanyScopeId] = useState("ALL");
   const [profileCompanyId, setProfileCompanyId] = useState("");
@@ -576,6 +645,95 @@ function App() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function previewBusinessPlanImport(event: React.FormEvent) {
+    event.preventDefault();
+    if (!businessPlanFile) {
+      setMessage("Select an Excel file first.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const response = await fetch(`${apiUrl}/api/business-plan-import/preview`, {
+        method: "POST",
+        headers: {
+          "Content-Type": businessPlanFile.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: businessPlanFile,
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not preview business plan");
+      setBusinessPlanPreview(data);
+      setBusinessProductImportResult(null);
+      setMessage(`Business plan preview ready: ${data.counts.companies} companies and ${data.counts.products} products detected.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not preview business plan");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function importProductPriceFile(file: File | null, onResult: (result: BusinessPlanProductImportResult) => void) {
+    if (!file) {
+      setMessage("Select a product price Excel file first.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const response = await fetch(`${apiUrl}/api/business-plan-import/import-products`, {
+        method: "POST",
+        headers: {
+          "Content-Type": file.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: file,
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not import product prices");
+      onResult(data);
+      setMessage(`Product import complete: ${data.created} created, ${data.updated} updated, ${data.skipped} skipped.`);
+      await loadSummary();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not import product prices");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function importBusinessPlanProducts() {
+    if (!businessPlanPreview) {
+      setMessage("Preview the Excel file before importing products.");
+      return;
+    }
+    await importProductPriceFile(businessPlanFile, setBusinessProductImportResult);
+  }
+
+  async function importStockProductPrices(event: React.FormEvent) {
+    event.preventDefault();
+    await importProductPriceFile(productPriceFile, setProductPriceImportResult);
+  }
+
+  async function deleteStockRow(stock: Stock) {
+    setConfirmationToast({
+      title: "Delete stock?",
+      message: `Delete ${stock.item.sku} stock from ${stock.company.name}?`,
+      confirmLabel: "Delete",
+      danger: true,
+      onConfirm: async () => {
+        setLoading(true);
+        try {
+          await request(`/api/catalog/stock/${stock.id}`, { method: "DELETE" });
+          setMessage(`${stock.item.sku} stock deleted from ${stock.company.name}.`);
+          await loadSummary();
+        } catch (error) {
+          setMessage(error instanceof Error ? error.message : "Could not delete stock");
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
   }
 
   async function deleteCompany(company: Company) {
@@ -1697,6 +1855,9 @@ function App() {
               <button type="button" className={settingsTab === "company" ? "secondary-button active-tab" : "secondary-button"} onClick={() => setSettingsTab("company")}>
                 <Building2 size={17} /> Company Profile
               </button>
+              <button type="button" className={settingsTab === "businessImport" ? "secondary-button active-tab" : "secondary-button"} onClick={() => setSettingsTab("businessImport")}>
+                <FileText size={17} /> Business Plan Import
+              </button>
               <button type="button" className={settingsTab === "email" ? "secondary-button active-tab" : "secondary-button"} onClick={() => setSettingsTab("email")}>
                 <Mail size={17} /> Email Configuration
               </button>
@@ -1947,6 +2108,151 @@ function App() {
               </div>
             )}
 
+            {settingsTab === "businessImport" && (
+              <div className="settings-section business-import-section">
+                <form className="business-import-form" onSubmit={previewBusinessPlanImport}>
+                  <label>
+                    Excel Business Plan File
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls,.xlsb,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                      onChange={(event) => {
+                        setBusinessPlanFile(event.currentTarget.files?.[0] ?? null);
+                        setBusinessPlanPreview(null);
+                      }}
+                    />
+                  </label>
+                  <button type="submit" disabled={loading || !businessPlanFile}><FileText size={17} /> Preview File</button>
+                </form>
+
+                {!businessPlanPreview && (
+                  <div className="empty-state">Upload the company activity workbook to preview companies, products, targets, and workflow rules before importing.</div>
+                )}
+
+                {businessPlanPreview && (
+                  <div className="business-preview">
+                    <div className="preview-metrics">
+                      <Metric label="Companies" value={businessPlanPreview.counts.companies} />
+                      <Metric label="Products" value={businessPlanPreview.counts.products} />
+                      <Metric label="Bank Status Rows" value={businessPlanPreview.counts.bankStatusRows} />
+                      <Metric label="Review Warnings" value={businessPlanPreview.counts.warnings} />
+                    </div>
+
+                    <div className="config-status ready">
+                      <strong>Workbook Preview Only</strong>
+                      <span>Sheets: {businessPlanPreview.workbook.sheetNames.join(", ")}</span>
+                      <span>{businessPlanPreview.nextStep}</span>
+                    </div>
+
+                    <div className="import-action-panel">
+                      <div>
+                        <strong>E.CARD Product Price Import</strong>
+                        <span>Imports product names and prices from the second sheet only. Companies and workflow targets are not imported in this step.</span>
+                      </div>
+                      <button type="button" disabled={loading || !businessPlanPreview.counts.products} onClick={importBusinessPlanProducts}>
+                        <Package size={17} /> Import Products
+                      </button>
+                    </div>
+
+                    {businessProductImportResult && (
+                      <div className="config-status ready">
+                        <strong>Product Import Complete</strong>
+                        <span>{businessProductImportResult.created} created, {businessProductImportResult.updated} updated, {businessProductImportResult.skipped} skipped.</span>
+                      </div>
+                    )}
+
+                    {!!businessPlanPreview.warnings.length && (
+                      <div className="config-status missing">
+                        <strong>Manual Review Needed</strong>
+                        {businessPlanPreview.warnings.slice(0, 12).map((warning) => <span key={warning}>{warning}</span>)}
+                        {businessPlanPreview.warnings.length > 12 && <span>{businessPlanPreview.warnings.length - 12} more warnings hidden.</span>}
+                      </div>
+                    )}
+
+                    <section>
+                      <h3>Company / Activity Preview</h3>
+                      <div className="table import-preview-table">
+                        {businessPlanPreview.companies.slice(0, 18).map((company) => (
+                          <div className="row import-company-row" key={`${company.index}-${company.name}`}>
+                            <span>{company.index || "-"}</span>
+                            <span>
+                              <strong>{company.name}</strong>
+                              <small>{company.email || "Email missing"}</small>
+                              <small>{company.address || "Address missing"}</small>
+                            </span>
+                            <span>
+                              <strong>Target</strong>
+                              <small>{company.revenueTargetText || "Not set"}</small>
+                              <small>{company.invoiceRuleText || "Invoice rule missing"}</small>
+                            </span>
+                            <span>
+                              <strong>Relations</strong>
+                              <small>Customer: {company.customerRule || "Not set"}</small>
+                              <small>Vendor: {company.vendorRule || "Not set"}</small>
+                            </span>
+                            <span>
+                              <strong>Bank</strong>
+                              <small>{company.bank.bankName || company.bank.status || "Not set"}</small>
+                              <small>{company.bank.iban || company.bank.accountNumber || ""}</small>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+
+                    <section>
+                      <h3>Product Price Preview</h3>
+                      <div className="table import-preview-table">
+                        {businessPlanPreview.products.slice(0, 20).map((product) => (
+                          <div className="row import-product-row" key={product.title}>
+                            <span>{product.title}</span>
+                            <span>{product.currency || "-"}</span>
+                            <span>{product.denominationAed === undefined ? "-" : money(product.denominationAed)}</span>
+                            <span>Buy {product.buyingPrice === undefined ? "-" : money(product.buyingPrice)}</span>
+                            <span>Sell {product.sellingPrice === undefined ? "-" : money(product.sellingPrice)}</span>
+                          </div>
+                        ))}
+                        {businessPlanPreview.products.length > 20 && <div className="empty-state">{businessPlanPreview.products.length - 20} more products detected.</div>}
+                      </div>
+                    </section>
+
+                    {businessProductImportResult && (
+                      <section>
+                        <h3>Imported Product Result</h3>
+                        <div className="table import-preview-table">
+                          {businessProductImportResult.rows.slice(0, 20).map((row) => (
+                            <div className="row import-product-row" key={`${row.sku}-${row.status}`}>
+                              <span>{row.sku}<small>{row.name}</small></span>
+                              <span>{row.status}</span>
+                              <span>Buy {row.buyingPrice === undefined ? "-" : money(row.buyingPrice)}</span>
+                              <span>Sell {money(row.sellingPrice)}</span>
+                              <span>{row.reason || "-"}</span>
+                            </div>
+                          ))}
+                          {businessProductImportResult.rows.length > 20 && <div className="empty-state">{businessProductImportResult.rows.length - 20} more imported rows hidden.</div>}
+                        </div>
+                      </section>
+                    )}
+
+                    {!!businessPlanPreview.bankStatusRows.length && (
+                      <section>
+                        <h3>Bank Status Preview</h3>
+                        <div className="table import-preview-table">
+                          {businessPlanPreview.bankStatusRows.map((row) => (
+                            <div className="row" key={row.companyName}>
+                              <span>{row.companyName}</span>
+                              <span>{row.owner || "-"}</span>
+                              <span>{row.bankStatus || "-"}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {settingsTab === "email" && (
               <div className="settings-section">
                 <div className={emailConfigStatus?.oauthConfigured ? "config-status ready" : "config-status missing"}>
@@ -2120,7 +2426,31 @@ function App() {
                 <textarea value={purchaseInvoiceText} onChange={(event) => setPurchaseInvoiceText(event.target.value)} />
                 <button type="submit" disabled={loading}><Save size={17} /> Insert Stock</button>
               </form>
+
+              <form className="tool-box" onSubmit={importStockProductPrices}>
+                <h3>Product Price Upload</h3>
+                <label>
+                  E.CARD Product File
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.xlsb,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                    onChange={(event) => {
+                      setProductPriceFile(event.currentTarget.files?.[0] ?? null);
+                      setProductPriceImportResult(null);
+                    }}
+                  />
+                </label>
+                <span className="muted-text">Imports product name, buying price, and selling price. Stock quantity is not changed.</span>
+                <button type="submit" disabled={loading || !productPriceFile}><Package size={17} /> Import Products</button>
+              </form>
             </section>
+
+            {productPriceImportResult && (
+              <div className="config-status ready stock-import-result">
+                <strong>Product Import Complete</strong>
+                <span>{productPriceImportResult.created} created, {productPriceImportResult.updated} updated, {productPriceImportResult.skipped} skipped.</span>
+              </div>
+            )}
 
             <form className="stock-form" onSubmit={saveStock}>
               <label>
@@ -2153,8 +2483,12 @@ function App() {
                   <span>{stock.company.name}</span>
                   <span>{stock.item.sku}</span>
                   <span>{stock.quantity} {stock.item.unit}</span>
+                  <button type="button" className="danger-button" onClick={() => deleteStockRow(stock)} disabled={loading}>
+                    <Trash2 size={16} /> Delete
+                  </button>
                 </div>
               ))}
+              {!scopedStock.length && <div className="empty-state">No stock rows yet.</div>}
             </div>
           </Panel>
         )}
