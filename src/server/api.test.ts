@@ -201,6 +201,7 @@ describe("api", () => {
       .send({
         name: "New Company",
         legalName: "New Company Trading LLC",
+        role: "BUYER",
         location: "Abu Dhabi, UAE",
         email: "new-company@example.com",
         active: true,
@@ -214,6 +215,7 @@ describe("api", () => {
       .expect(201);
 
     expect(created.body.name).toBe("New Company");
+    expect(created.body.role).toBe("BUYER");
     expect(created.body.active).toBe(true);
     expect(created.body.vatEnabled).toBe(false);
     expect(created.body.bankName).toBe("RAK Bank");
@@ -225,7 +227,24 @@ describe("api", () => {
       .expect(200);
 
     expect(summary.body.companies[0].legalName).toBe("New Company Trading LLC");
+    expect(summary.body.companies[0].role).toBe("BUYER");
     expect(summary.body.companies[0].vatEnabled).toBe(false);
+
+    const updated = await request(app)
+      .patch(`/api/catalog/companies/${created.body.id}`)
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .send({
+        name: "New Company",
+        legalName: "New Company Trading LLC",
+        role: "SELLER",
+        location: "Abu Dhabi, UAE",
+        email: "new-company@example.com",
+        active: true,
+        vatEnabled: false,
+      })
+      .expect(200);
+
+    expect(updated.body.role).toBe("SELLER");
   });
 
   it("uploads a company logo and exposes the preview path", async () => {

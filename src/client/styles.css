@@ -689,6 +689,19 @@ nav .nav-button.active {
   gap: 6px;
 }
 
+.partner-list-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.partner-list-card {
+  overflow: hidden;
+  border: 1px solid #d8dfda;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
 .company-active-toggle {
   display: flex;
   flex-direction: column;

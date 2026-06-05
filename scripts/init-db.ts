@@ -336,6 +336,9 @@ for (const column of itemOptionalColumns) {
 }
 
 const companyColumns = db.prepare("PRAGMA table_info(Company)").all() as Array<{ name: string }>;
+if (!companyColumns.some((column) => column.name === "role")) {
+  db.exec("ALTER TABLE Company ADD COLUMN role TEXT NOT NULL DEFAULT 'BOTH';");
+}
 if (!companyColumns.some((column) => column.name === "active")) {
   db.exec("ALTER TABLE Company ADD COLUMN active BOOLEAN NOT NULL DEFAULT true;");
 }

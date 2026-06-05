@@ -14,6 +14,7 @@ type Company = {
   id: string;
   name: string;
   legalName: string;
+  role?: "BUYER" | "SELLER" | "BOTH";
   email: string;
   location: string;
   trn?: string;
@@ -331,6 +332,20 @@ function percent(value: string | number | undefined) {
   if (!Number.isFinite(parsed)) return "-";
   const normalized = Math.abs(parsed) <= 1 ? parsed * 100 : parsed;
   return `${normalized.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+}
+
+function roleLabel(role?: Company["role"]) {
+  if (role === "BUYER") return "Customer";
+  if (role === "SELLER") return "Vendor";
+  return "Customer & Vendor";
+}
+
+function canBeCustomer(company: Company) {
+  return company.role === "BUYER" || company.role === "BOTH" || !company.role;
+}
+
+function canBeVendor(company: Company) {
+  return company.role === "SELLER" || company.role === "BOTH" || !company.role;
 }
 
 function dateInputValue(date = new Date()) {
@@ -667,11 +682,13 @@ function App() {
 
     setLoading(true);
     try {
+      const currentCompany = summary?.companies.find((company) => company.id === profileCompanyId);
       await request(`/api/catalog/companies/${profileCompanyId}`, {
         method: "PATCH",
         body: JSON.stringify({
           name: profileName,
           legalName: profileLegalName,
+          role: currentCompany?.role ?? "BOTH",
           location: profileLocation,
           email: profileEmail,
           trn: profileTrn || undefined,
@@ -692,6 +709,7 @@ function App() {
     const form = new FormData(event.currentTarget);
     const name = String(form.get("name") ?? "").trim();
     const legalName = String(form.get("legalName") ?? "").trim();
+    const role = String(form.get("role") ?? "BOTH") as "BUYER" | "SELLER" | "BOTH";
     const location = String(form.get("location") ?? "").trim();
     const emailValue = String(form.get("email") ?? "").trim();
     const trn = String(form.get("trn") ?? "").trim();
@@ -715,6 +733,7 @@ function App() {
         body: JSON.stringify({
           name,
           legalName,
+          role,
           location,
           email: emailValue,
           trn: trn || undefined,
@@ -743,6 +762,7 @@ function App() {
     const form = new FormData(event.currentTarget);
     const name = String(form.get("name") ?? "").trim();
     const legalName = String(form.get("legalName") ?? "").trim();
+    const role = String(form.get("role") ?? "BOTH") as "BUYER" | "SELLER" | "BOTH";
     const location = String(form.get("location") ?? "").trim();
     const emailValue = String(form.get("email") ?? "").trim();
     const trn = String(form.get("trn") ?? "").trim();
@@ -766,6 +786,7 @@ function App() {
         body: JSON.stringify({
           name,
           legalName,
+          role,
           location,
           email: emailValue,
           trn: trn || undefined,
@@ -1930,6 +1951,8 @@ function App() {
   }
   const sidebarPortalLinks = summary ? activePortalLinks : fallbackPortalLinks;
   const visibleCompanyOptions = isCompanyPortal ? scopedCompanies : activeCompanies;
+  const allCustomerCompanyOptions = (summary?.companies ?? []).filter((company) => company.active !== false).filter(canBeCustomer);
+  const allVendorCompanyOptions = (summary?.companies ?? []).filter((company) => company.active !== false).filter(canBeVendor);
   const settingsCompanyOptions = summary?.companies ?? [];
   const workflowSellerId = workflowDirection === "PURCHASE" ? workflowCounterpartyId : workflowCompanyId;
   const workflowProductOptions = (summary?.items ?? []).map((item) => {
@@ -2188,7 +2211,7 @@ function App() {
                     <div className="company-card-head">
                       <div>
                         <strong>Create Company</strong>
-                        <span>Add a new company profile for portal, workflow, PO, and invoice use.</span>
+                        <span>Onboard a customer, vendor, or a partner that works as both.</span>
                       </div>
                       <label className="company-active-toggle compact-toggle">
                         <span>
@@ -2211,6 +2234,14 @@ function App() {
                       <label>
                         Legal Company Name
                         <input name="legalName" placeholder="Legal trade license name" />
+                      </label>
+                      <label>
+                        Partner Type
+                        <select name="role" defaultValue="BOTH">
+                          <option value="BUYER">Customer</option>
+                          <option value="SELLER">Vendor</option>
+                          <option value="BOTH">Customer & Vendor</option>
+                        </select>
                       </label>
                       <label>
                         TRN / Tax Number
@@ -2255,6 +2286,40 @@ function App() {
                     </div>
                   </form>
                 )}
+                <div className="partner-list-grid">
+                  <div className="partner-list-card">
+                    <div className="table-section-title">
+                      <strong>Customer List</strong>
+                      <span>{settingsCompanyOptions.filter(canBeCustomer).length} customers</span>
+                    </div>
+                    <div className="table">
+                      {settingsCompanyOptions.filter(canBeCustomer).map((company) => (
+                        <div className="row" key={`customer-${company.id}`}>
+                          <span>{company.name}</span>
+                          <span>{company.email}</span>
+                          <span className={`status-badge ${company.active === false ? "stopped" : "completed"}`}>{company.active === false ? "Inactive" : "Active"}</span>
+                        </div>
+                      ))}
+                      {!settingsCompanyOptions.filter(canBeCustomer).length && <div className="empty-state">No customers onboarded yet.</div>}
+                    </div>
+                  </div>
+                  <div className="partner-list-card">
+                    <div className="table-section-title">
+                      <strong>Vendor List</strong>
+                      <span>{settingsCompanyOptions.filter(canBeVendor).length} vendors</span>
+                    </div>
+                    <div className="table">
+                      {settingsCompanyOptions.filter(canBeVendor).map((company) => (
+                        <div className="row" key={`vendor-${company.id}`}>
+                          <span>{company.name}</span>
+                          <span>{company.email}</span>
+                          <span className={`status-badge ${company.active === false ? "stopped" : "completed"}`}>{company.active === false ? "Inactive" : "Active"}</span>
+                        </div>
+                      ))}
+                      {!settingsCompanyOptions.filter(canBeVendor).length && <div className="empty-state">No vendors onboarded yet.</div>}
+                    </div>
+                  </div>
+                </div>
                 {settingsCompanyOptions.map((company) => {
                   const isExpanded = expandedCompanyIds.includes(company.id);
                   return (
@@ -2270,6 +2335,7 @@ function App() {
                           </div>
                         </div>
                         <div className="company-card-summary-actions">
+                          <span className="status-badge open">{roleLabel(company.role)}</span>
                           <span className={`status-badge ${company.active === false ? "stopped" : "completed"}`}>{company.active === false ? "Inactive" : "Active"}</span>
                           <button type="button" className="secondary-button" onClick={() => toggleCompanyExpanded(company.id)}>
                             {isExpanded ? <ChevronUp size={17} /> : <ChevronDown size={17} />}
@@ -2299,6 +2365,14 @@ function App() {
                             <label>
                               Legal Company Name
                               <input name="legalName" defaultValue={company.legalName} />
+                            </label>
+                            <label>
+                              Partner Type
+                              <select name="role" defaultValue={company.role ?? "BOTH"}>
+                                <option value="BUYER">Customer</option>
+                                <option value="SELLER">Vendor</option>
+                                <option value="BOTH">Customer & Vendor</option>
+                              </select>
                             </label>
                             <label>
                               TRN / Tax Number
@@ -2365,6 +2439,7 @@ function App() {
                                     body: JSON.stringify({
                                       name: company.name,
                                       legalName: company.legalName,
+                                      role: company.role ?? "BOTH",
                                       location: company.location,
                                       email: company.email,
                                       trn: company.trn || undefined,
@@ -3186,7 +3261,9 @@ function App() {
                 {workflowDirection === "PURCHASE" ? "Vendor" : "Customer"}
                 <select value={workflowCounterpartyId} onChange={(event) => setWorkflowCounterpartyId(event.target.value)}>
                   <option value="">Select {workflowDirection === "PURCHASE" ? "vendor" : "customer"}</option>
-                  {(summary?.companies ?? []).filter((company) => company.id !== workflowCompanyId).map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}
+                  {(workflowDirection === "PURCHASE" ? allVendorCompanyOptions : allCustomerCompanyOptions)
+                    .filter((company) => company.id !== workflowCompanyId)
+                    .map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}
                 </select>
               </label>
               <label>
@@ -3350,7 +3427,9 @@ function App() {
                 {workflowDirection === "SALES" ? "Customer Name" : "Vendor Name"}
                 <select value={workflowCounterpartyId} onChange={(event) => setWorkflowCounterpartyId(event.target.value)}>
                   <option value="">Select {workflowDirection === "SALES" ? "customer" : "vendor"}</option>
-                  {(summary?.companies ?? []).filter((company) => company.id !== workflowCompanyId).map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}
+                  {(workflowDirection === "PURCHASE" ? allVendorCompanyOptions : allCustomerCompanyOptions)
+                    .filter((company) => company.id !== workflowCompanyId)
+                    .map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}
                 </select>
               </label>
               <label>

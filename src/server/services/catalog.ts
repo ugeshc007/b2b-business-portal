@@ -6,6 +6,7 @@ import { prisma } from "../db";
 export async function createCompany(data: {
   name: string;
   legalName: string;
+  role?: "BUYER" | "SELLER" | "BOTH";
   trn?: string;
   location: string;
   email: string;
@@ -20,13 +21,14 @@ export async function createCompany(data: {
   bankBranch?: string;
 }) {
   return prisma.company.create({
-    data: { ...data, active: data.active ?? true, vatEnabled: data.vatEnabled ?? true, role: "BOTH" },
+    data: { ...data, active: data.active ?? true, vatEnabled: data.vatEnabled ?? true, role: data.role ?? "BOTH" },
   });
 }
 
 export async function updateCompany(companyId: string, data: {
   name: string;
   legalName: string;
+  role?: "BUYER" | "SELLER" | "BOTH";
   trn?: string;
   location: string;
   email: string;
@@ -48,6 +50,7 @@ export async function updateCompany(companyId: string, data: {
     data: {
       name: data.name,
       legalName: data.legalName,
+      role: data.role ?? company.role,
       trn: data.trn || null,
       location: data.location,
       email: data.email,

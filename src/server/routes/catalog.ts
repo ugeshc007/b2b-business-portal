@@ -19,6 +19,7 @@ catalogRouter.post("/companies", async (req, res, next) => {
     const input = z.object({
       name: z.string().min(2),
       legalName: z.string().min(2),
+      role: z.enum(["BUYER", "SELLER", "BOTH"]).optional(),
       trn: z.string().optional(),
       location: z.string().min(2),
       email: z.string().email(),
@@ -43,6 +44,7 @@ catalogRouter.patch("/companies/:id", async (req, res, next) => {
     const input = z.object({
       name: z.string().min(2),
       legalName: z.string().min(2),
+      role: z.enum(["BUYER", "SELLER", "BOTH"]).optional(),
       trn: z.string().optional().or(z.literal("")),
       location: z.string().min(2),
       email: z.string().email(),
