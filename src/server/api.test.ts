@@ -326,6 +326,7 @@ describe("api", () => {
         DenominationTitle: "Amazon UAE - 100",
         Currency: "AED",
         DENOMINATION: 100,
+        Conversion: 1,
         "Denomination in AED ": 100,
         "BUYING PRICE": 96,
         PROFIT: 4,
@@ -336,6 +337,7 @@ describe("api", () => {
         DenominationTitle: "App Store US - 10",
         Currency: "USD",
         DENOMINATION: 10,
+        Conversion: 3.9,
         "Denomination in AED ": 39,
         "BUYING PRICE": 34.5,
         PROFIT: 4.5,
@@ -359,6 +361,13 @@ describe("api", () => {
     const item = await prisma.item.findUnique({ where: { sku: "AMAZON-UAE-100" } });
     expect(item?.name).toBe("Amazon UAE - 100");
     expect(String(item?.unit)).toBe("code");
+    expect(item?.currency).toBe("AED");
+    expect(Number(item?.denomination)).toBe(100);
+    expect(Number(item?.conversionRate)).toBe(1);
+    expect(Number(item?.denominationAed)).toBe(100);
+    expect(Number(item?.buyingPrice)).toBe(96);
+    expect(Number(item?.profit)).toBe(4);
+    expect(Number(item?.marginPercent)).toBe(0.04);
     expect(Number(item?.minPrice)).toBe(96);
     expect(Number(item?.expectedPrice)).toBe(99);
     expect(Number(item?.maxPrice)).toBe(99);

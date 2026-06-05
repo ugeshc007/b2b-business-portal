@@ -27,7 +27,22 @@ type Company = {
   bankBranch?: string;
   logoPath?: string;
 };
-type Item = { id: string; sku: string; name: string; unit: string; expectedPrice: string; maxPrice?: string };
+type Item = {
+  id: string;
+  sku: string;
+  name: string;
+  unit: string;
+  expectedPrice: string;
+  minPrice?: string;
+  maxPrice?: string;
+  currency?: string;
+  denomination?: string;
+  conversionRate?: string;
+  denominationAed?: string;
+  buyingPrice?: string;
+  profit?: string;
+  marginPercent?: string;
+};
 type Stock = { id: string; quantity: number; company: Company; item: Item };
 type Target = {
   id: string;
@@ -193,7 +208,13 @@ type BusinessPlanProductImportResult = {
   rows: Array<{
     sku: string;
     name: string;
+    currency?: string;
+    denomination?: number;
+    conversionRate?: number;
+    denominationAed?: number;
     buyingPrice?: number;
+    profit?: number;
+    marginPercent?: number;
     sellingPrice: number;
     status: "CREATED" | "UPDATED" | "SKIPPED";
     reason?: string;
@@ -300,6 +321,14 @@ type View = "overview" | "stock" | "ecommerce" | "workflow" | "invoices" | "sett
 
 function money(value: string | number) {
   return `AED ${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function percent(value: string | number | undefined) {
+  if (value === undefined || value === null || value === "") return "-";
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return "-";
+  const normalized = Math.abs(parsed) <= 1 ? parsed * 100 : parsed;
+  return `${normalized.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
 }
 
 function dateInputValue(date = new Date()) {
@@ -2733,7 +2762,9 @@ function App() {
                 <span>Showing latest imported rows below. Full product master contains {(summary?.items ?? []).length} products.</span>
                 <div className="imported-product-list">
                   {productPriceImportResult.rows.slice(0, 12).map((row) => (
-                    <span key={row.sku}>{row.sku} - {row.name} - {money(row.sellingPrice)}</span>
+                    <span key={row.sku}>
+                      {row.sku} - {row.name} - {row.currency ?? "-"} {row.denomination ?? "-"} - Buy {money(row.buyingPrice ?? 0)} - Profit {money(row.profit ?? 0)} - {percent(row.marginPercent)} - Sell {money(row.sellingPrice)}
+                    </span>
                   ))}
                   {productPriceImportResult.rows.length > 12 && <span>+ {productPriceImportResult.rows.length - 12} more products in Product Master.</span>}
                 </div>
@@ -2745,13 +2776,34 @@ function App() {
               <span>{productMasterRows.length} products imported/created</span>
             </div>
             <div className="table product-master-table">
+              {!!productMasterRows.length && (
+                <div className="row table-header">
+                  <span>Product</span>
+                  <span>Currency</span>
+                  <span>Denomination</span>
+                  <span>Conversion</span>
+                  <span>Denom AED</span>
+                  <span>Buying</span>
+                  <span>Profit</span>
+                  <span>%</span>
+                  <span>Selling</span>
+                  <span>Stock</span>
+                  <span>Action</span>
+                </div>
+              )}
               {productMasterRows.map((item) => (
                 <div className="row" key={item.id}>
                   <span>
                     <strong>{item.sku}</strong>
                     <small>{item.name}</small>
                   </span>
-                  <span>{item.unit}</span>
+                  <span>{item.currency ?? "-"}</span>
+                  <span>{item.denomination ?? "-"}</span>
+                  <span>{item.conversionRate ?? "-"}</span>
+                  <span>{item.denominationAed ? money(item.denominationAed) : "-"}</span>
+                  <span>{item.buyingPrice || item.minPrice ? money(item.buyingPrice ?? item.minPrice ?? 0) : "-"}</span>
+                  <span>{item.profit ? money(item.profit) : "-"}</span>
+                  <span>{percent(item.marginPercent)}</span>
                   <span>{money(item.expectedPrice)}</span>
                   <span>{stockItemIds.has(item.id) ? "Stock row exists" : "No stock row yet"}</span>
                   <button

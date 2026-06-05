@@ -81,6 +81,13 @@ model Item {
   expectedPrice  Decimal
   minPrice       Decimal?
   maxPrice       Decimal?
+  currency       String?
+  denomination   Decimal?
+  conversionRate Decimal?
+  denominationAed Decimal?
+  buyingPrice    Decimal?
+  profit         Decimal?
+  marginPercent  Decimal?
   vatRate        Decimal  @default(0.05)
   active         Boolean  @default(true)
   createdAt      DateTime @default(now())

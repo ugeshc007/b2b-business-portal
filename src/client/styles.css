@@ -1000,14 +1000,25 @@ nav .nav-button.active {
   overflow: auto;
 }
 
+.product-master-table {
+  overflow-x: auto;
+}
+
 .product-master-table .row {
-  grid-template-columns: 1.4fr 0.4fr 0.6fr 0.8fr auto;
+  grid-template-columns: minmax(260px, 1.5fr) repeat(8, minmax(110px, 0.7fr)) minmax(130px, 0.8fr) minmax(130px, auto);
+  min-width: 1350px;
 }
 
 .product-master-table small {
   display: block;
   margin-top: 3px;
   color: #66756a;
+}
+
+.product-master-table .table-header {
+  font-weight: 700;
+  color: #2a382f;
+  background: #f4f8f5;
 }
 
 .tool-box {

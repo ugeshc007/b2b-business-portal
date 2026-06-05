@@ -35,6 +35,7 @@ export type BusinessPlanProductPreview = {
   title: string;
   currency?: string;
   denomination?: number;
+  conversionRate?: number;
   denominationAed?: number;
   buyingPrice?: number;
   sellingPrice?: number;
@@ -69,7 +70,13 @@ export type BusinessPlanProductImportResult = {
   rows: Array<{
     sku: string;
     name: string;
+    currency?: string;
+    denomination?: number;
+    conversionRate?: number;
+    denominationAed?: number;
     buyingPrice?: number;
+    profit?: number;
+    marginPercent?: number;
     sellingPrice: number;
     status: "CREATED" | "UPDATED" | "SKIPPED";
     reason?: string;
@@ -251,6 +258,7 @@ export function parseBusinessPlanWorkbook(buffer: Buffer): BusinessPlanImportPre
         title,
         currency: cleanText(rowValue(row, "Currency")) || undefined,
         denomination: numericValue(rowValue(row, "DENOMINATION")),
+        conversionRate: numericValue(rowValue(row, "Conversion")) ?? numericValue(rowValue(row, "Coversion")),
         denominationAed: numericValue(rowValue(row, "Denomination in AED")),
         buyingPrice: numericValue(rowValue(row, "BUYING PRICE")),
         sellingPrice: numericValue(rowValue(row, "SELLING PRICE")),
@@ -315,7 +323,13 @@ export async function importBusinessPlanProducts(buffer: Buffer): Promise<Busine
       result.rows.push({
         sku: sku || "-",
         name: product.title,
+        currency: product.currency,
+        denomination: product.denomination,
+        conversionRate: product.conversionRate,
+        denominationAed: product.denominationAed,
         buyingPrice: product.buyingPrice,
+        profit: product.profit,
+        marginPercent: product.marginPercent,
         sellingPrice: sellingPrice ?? 0,
         status: "SKIPPED",
         reason: "Missing valid selling price",
@@ -327,7 +341,13 @@ export async function importBusinessPlanProducts(buffer: Buffer): Promise<Busine
       result.rows.push({
         sku,
         name: product.title,
+        currency: product.currency,
+        denomination: product.denomination,
+        conversionRate: product.conversionRate,
+        denominationAed: product.denominationAed,
         buyingPrice: product.buyingPrice,
+        profit: product.profit,
+        marginPercent: product.marginPercent,
         sellingPrice,
         status: "SKIPPED",
         reason: "Duplicate SKU in workbook",
@@ -345,6 +365,13 @@ export async function importBusinessPlanProducts(buffer: Buffer): Promise<Busine
         expectedPrice: new Prisma.Decimal(sellingPrice),
         minPrice: product.buyingPrice === undefined ? null : new Prisma.Decimal(product.buyingPrice),
         maxPrice: new Prisma.Decimal(sellingPrice),
+        currency: product.currency ?? null,
+        denomination: product.denomination === undefined ? null : new Prisma.Decimal(product.denomination),
+        conversionRate: product.conversionRate === undefined ? null : new Prisma.Decimal(product.conversionRate),
+        denominationAed: product.denominationAed === undefined ? null : new Prisma.Decimal(product.denominationAed),
+        buyingPrice: product.buyingPrice === undefined ? null : new Prisma.Decimal(product.buyingPrice),
+        profit: product.profit === undefined ? null : new Prisma.Decimal(product.profit),
+        marginPercent: product.marginPercent === undefined ? null : new Prisma.Decimal(product.marginPercent),
         vatRate: new Prisma.Decimal(0.05),
         active: true,
       },
@@ -355,6 +382,13 @@ export async function importBusinessPlanProducts(buffer: Buffer): Promise<Busine
         expectedPrice: new Prisma.Decimal(sellingPrice),
         minPrice: product.buyingPrice === undefined ? undefined : new Prisma.Decimal(product.buyingPrice),
         maxPrice: new Prisma.Decimal(sellingPrice),
+        currency: product.currency,
+        denomination: product.denomination === undefined ? undefined : new Prisma.Decimal(product.denomination),
+        conversionRate: product.conversionRate === undefined ? undefined : new Prisma.Decimal(product.conversionRate),
+        denominationAed: product.denominationAed === undefined ? undefined : new Prisma.Decimal(product.denominationAed),
+        buyingPrice: product.buyingPrice === undefined ? undefined : new Prisma.Decimal(product.buyingPrice),
+        profit: product.profit === undefined ? undefined : new Prisma.Decimal(product.profit),
+        marginPercent: product.marginPercent === undefined ? undefined : new Prisma.Decimal(product.marginPercent),
         vatRate: new Prisma.Decimal(0.05),
         active: true,
       },
@@ -362,10 +396,10 @@ export async function importBusinessPlanProducts(buffer: Buffer): Promise<Busine
 
     if (existing) {
       result.updated += 1;
-      result.rows.push({ sku, name: product.title, buyingPrice: product.buyingPrice, sellingPrice, status: "UPDATED" });
+      result.rows.push({ sku, name: product.title, currency: product.currency, denomination: product.denomination, conversionRate: product.conversionRate, denominationAed: product.denominationAed, buyingPrice: product.buyingPrice, profit: product.profit, marginPercent: product.marginPercent, sellingPrice, status: "UPDATED" });
     } else {
       result.created += 1;
-      result.rows.push({ sku, name: product.title, buyingPrice: product.buyingPrice, sellingPrice, status: "CREATED" });
+      result.rows.push({ sku, name: product.title, currency: product.currency, denomination: product.denomination, conversionRate: product.conversionRate, denominationAed: product.denominationAed, buyingPrice: product.buyingPrice, profit: product.profit, marginPercent: product.marginPercent, sellingPrice, status: "CREATED" });
     }
   }
 

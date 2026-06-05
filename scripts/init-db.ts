@@ -61,6 +61,13 @@ CREATE TABLE IF NOT EXISTS Item (
   expectedPrice DECIMAL NOT NULL,
   minPrice DECIMAL,
   maxPrice DECIMAL,
+  currency TEXT,
+  denomination DECIMAL,
+  conversionRate DECIMAL,
+  denominationAed DECIMAL,
+  buyingPrice DECIMAL,
+  profit DECIMAL,
+  marginPercent DECIMAL,
   vatRate DECIMAL NOT NULL DEFAULT 0.05,
   active BOOLEAN NOT NULL DEFAULT true,
   createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -310,6 +317,22 @@ CREATE UNIQUE INDEX IF NOT EXISTS TurnoverTarget_companyId_type_month_key ON Tur
 const invoiceColumns = db.prepare("PRAGMA table_info(Invoice)").all() as Array<{ name: string }>;
 if (!invoiceColumns.some((column) => column.name === "pdfPath")) {
   db.exec("ALTER TABLE Invoice ADD COLUMN pdfPath TEXT;");
+}
+
+const itemColumns = db.prepare("PRAGMA table_info(Item)").all() as Array<{ name: string }>;
+const itemOptionalColumns: Array<{ name: string; type: string }> = [
+  { name: "currency", type: "TEXT" },
+  { name: "denomination", type: "DECIMAL" },
+  { name: "conversionRate", type: "DECIMAL" },
+  { name: "denominationAed", type: "DECIMAL" },
+  { name: "buyingPrice", type: "DECIMAL" },
+  { name: "profit", type: "DECIMAL" },
+  { name: "marginPercent", type: "DECIMAL" },
+];
+for (const column of itemOptionalColumns) {
+  if (!itemColumns.some((existing) => existing.name === column.name)) {
+    db.exec(`ALTER TABLE Item ADD COLUMN ${column.name} ${column.type};`);
+  }
 }
 
 const companyColumns = db.prepare("PRAGMA table_info(Company)").all() as Array<{ name: string }>;
