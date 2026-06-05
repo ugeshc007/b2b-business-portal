@@ -2895,8 +2895,8 @@ function App() {
                       setProductPricePreview(null);
                       setProductPriceImportResult(null);
                       setShowProductImportProgress(Boolean(selectedFile));
-                      setProductImportProgress(selectedFile ? 10 : 0);
-                      setProductImportStatus(selectedFile ? "File selected. Preview before import." : "Waiting for product file");
+                      setProductImportProgress(0);
+                      setProductImportStatus(selectedFile ? "File selected. Click Preview Products to continue." : "Waiting for product file");
                     }}
                   />
                 </label>
@@ -2914,9 +2914,11 @@ function App() {
                   <strong>Import Progress</strong>
                   <span>{productImportStatus}</span>
                 </div>
-                <div className="progress-track">
-                  <span style={{ width: `${productImportProgress}%` }} />
-                </div>
+                {productImportProgress > 0 && (
+                  <div className="progress-track">
+                    <span style={{ width: `${productImportProgress}%` }} />
+                  </div>
+                )}
               </div>
             )}
 
