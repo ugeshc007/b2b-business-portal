@@ -3,6 +3,7 @@ import path from "node:path";
 import PDFDocument from "pdfkit";
 import { prisma } from "../db";
 import { drawBrandHeader, drawBrandLogo, drawSectionLabel, drawTableHeader, drawTotalsBox, getDocumentBrand } from "./documentBrand";
+import { appDate } from "../../shared/timezone";
 
 function money(value: { toString(): string } | string | number) {
   return `AED ${Number(value.toString()).toFixed(2)}`;
@@ -153,7 +154,7 @@ function drawBuy2dayInvoicePdf(doc: PDFKit.PDFDocument, invoice: InvoicePdfData)
   drawBox(doc, 390, 124, 160, 58);
   doc.font("Helvetica-Bold").fontSize(8.5).text("Date", 400, 136);
   doc.text("Invoice Number", 400, 152);
-  doc.font("Helvetica").text(`: ${invoice.createdAt.toLocaleDateString()}`, 470, 136, { width: 72 });
+  doc.font("Helvetica").text(`: ${appDate(invoice.createdAt)}`, 470, 136, { width: 72 });
   doc.text(`: ${invoice.invoiceNumber}`, 470, 152, { width: 72 });
 
   drawTemplateCompany(doc, "Sold To:", invoice.buyerCompany, 42, 214, 248, 118);
@@ -162,7 +163,7 @@ function drawBuy2dayInvoicePdf(doc: PDFKit.PDFDocument, invoice: InvoicePdfData)
   const infoY = 340;
   const infoColumns = [
     ["Customer PO No.", invoice.purchaseOrder.poNumber],
-    ["Customer PO Date", invoice.purchaseOrder.createdAt.toLocaleDateString()],
+    ["Customer PO Date", appDate(invoice.purchaseOrder.createdAt)],
     ["Inv Curr.", "AED"],
     ["Payment Terms", "2 DAYS"],
   ];
@@ -333,7 +334,7 @@ export async function generateInvoicePdf(invoiceId: string) {
       return;
     }
 
-    drawBrandHeader(doc, brand, "TAX INVOICE", "Invoice No", invoice.invoiceNumber, "Date", invoice.createdAt.toLocaleDateString(), "PO Ref", invoice.purchaseOrder.poNumber);
+    drawBrandHeader(doc, brand, "TAX INVOICE", "Invoice No", invoice.invoiceNumber, "Date", appDate(invoice.createdAt), "PO Ref", invoice.purchaseOrder.poNumber);
 
     const top = 150;
     const sellerBottom = drawCompanyBlock(doc, brand, "Seller", invoice.sellerCompany, 42, top);
@@ -347,7 +348,7 @@ export async function generateInvoicePdf(invoiceId: string) {
     for (const [index, line] of invoice.lines.entries()) {
       if (y > 700) {
         doc.addPage();
-        drawBrandHeader(doc, brand, "TAX INVOICE", "Invoice No", invoice.invoiceNumber, "Date", invoice.createdAt.toLocaleDateString(), "PO Ref", invoice.purchaseOrder.poNumber);
+        drawBrandHeader(doc, brand, "TAX INVOICE", "Invoice No", invoice.invoiceNumber, "Date", appDate(invoice.createdAt), "PO Ref", invoice.purchaseOrder.poNumber);
         y = 145;
         drawTableHeader(doc, brand, y);
         y += 34;

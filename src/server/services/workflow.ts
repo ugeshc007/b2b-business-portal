@@ -5,13 +5,14 @@ import { generateInvoicePdf } from "./invoicePdf";
 import { getPurchaseOrderPdf } from "./purchaseOrderPdf";
 import { purchaseOrderHtml } from "./documentEmail";
 import nodemailer from "nodemailer";
+import { appDate } from "../../shared/timezone";
 
 function money(value: Prisma.Decimal.Value) {
   return new Prisma.Decimal(value).toDecimalPlaces(2);
 }
 
 function docNumber(prefix: string) {
-  return `${prefix}-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${Math.random()
+  return `${prefix}-${appDate().replaceAll("-", "")}-${Math.random()
     .toString(36)
     .slice(2, 7)
     .toUpperCase()}`;
@@ -249,7 +250,7 @@ function addDays(date: Date, days: number) {
 }
 
 function dateString(date: Date) {
-  return date.toISOString().slice(0, 10);
+  return appDate(date);
 }
 
 const scheduledVendorInvoices = new Map<string, NodeJS.Timeout>();
@@ -820,7 +821,7 @@ export async function sendPurchaseOrder(orderId: string) {
     buyer: order.buyerCompany,
     vendor: order.sellerCompany,
     poNumber: order.poNumber,
-    date: order.createdAt.toLocaleDateString(),
+    date: appDate(order.createdAt),
     lines: order.lines.map((line) => ({
       sku: line.item.sku,
       name: line.item.name,

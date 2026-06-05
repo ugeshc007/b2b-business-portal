@@ -3,6 +3,7 @@ import path from "node:path";
 import PDFDocument from "pdfkit";
 import { prisma } from "../db";
 import { drawBrandHeader, drawBrandLogo, drawSectionLabel, drawTableHeader, drawTotalsBox, getDocumentBrand } from "./documentBrand";
+import { appDate } from "../../shared/timezone";
 
 function money(value: { toFixed(decimalPlaces: number): string } | string | number) {
   return `AED ${Number(value.toString()).toFixed(2)}`;
@@ -86,7 +87,7 @@ async function writePurchaseOrderPdf(order: {
       return;
     }
 
-    drawBrandHeader(doc, brand, "PURCHASE ORDER", "PO No", order.poNumber, "Date", order.createdAt.toLocaleDateString());
+    drawBrandHeader(doc, brand, "PURCHASE ORDER", "PO No", order.poNumber, "Date", appDate(order.createdAt));
 
     const top = 150;
     drawSectionLabel(doc, brand, "Buyer", 42, top);
@@ -109,7 +110,7 @@ async function writePurchaseOrderPdf(order: {
     for (const [index, line] of order.lines.entries()) {
       if (y > 700) {
         doc.addPage();
-        drawBrandHeader(doc, brand, "PURCHASE ORDER", "PO No", order.poNumber, "Date", order.createdAt.toLocaleDateString());
+        drawBrandHeader(doc, brand, "PURCHASE ORDER", "PO No", order.poNumber, "Date", appDate(order.createdAt));
         y = 145;
         drawTableHeader(doc, brand, y);
         y += 34;
@@ -199,7 +200,7 @@ function drawBuy2dayLpoPdf(doc: PDFKit.PDFDocument, order: {
   drawCell(doc, margin + 52, rowY, leftW - 52, 18, order.sellerCompany.legalName, { size: 9 });
   drawCell(doc, margin + leftW, rowY, labelW, 18, "Purchase Order No. / Date", { bold: true, size: 9 });
   drawCell(doc, margin + leftW + labelW, rowY, valW, 18, order.poNumber, { size: 9 });
-  drawCell(doc, margin + leftW + labelW + valW, rowY, dateW, 18, order.createdAt.toLocaleDateString(), { size: 9 });
+  drawCell(doc, margin + leftW + labelW + valW, rowY, dateW, 18, appDate(order.createdAt), { size: 9 });
 
   rowY += 18;
   drawCell(doc, margin, rowY, 52, 36);

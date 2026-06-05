@@ -2,6 +2,8 @@ import request from "supertest";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import * as XLSX from "xlsx";
+import fs from "node:fs";
+import path from "node:path";
 import { createApp } from "./app";
 import { createUser } from "./auth";
 import { createCompany, createItem, setStock } from "./services/catalog";
@@ -75,6 +77,29 @@ describe("api", () => {
     expect(summary.body.counts.companies).toBe(0);
     expect(summary.body.overview.invoiceTotal).toBe("0");
     expect(summary.body.overview.stockByCompany).toEqual([]);
+  });
+
+  it("records request and error logs for admin review", async () => {
+    await createUser("admin@example.com", "ChangeMe123!", "Admin");
+    const login = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "admin@example.com", password: "ChangeMe123!" })
+      .expect(200);
+
+    await request(app)
+      .delete("/api/catalog/stock/missing-stock-id")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .expect(404);
+
+    const logs = await request(app)
+      .get("/api/system-logs?level=ERROR&limit=20")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .expect(200);
+
+    expect(logs.body.status.retentionDays).toBeGreaterThan(0);
+    expect(logs.body.logs.some((entry: { event: string; message?: string }) =>
+      entry.event === "application_error" && entry.message?.includes("Stock row not found")
+    )).toBe(true);
   });
 
   it("sets stock for a company and item through the protected API", async () => {
@@ -567,6 +592,89 @@ describe("api", () => {
       .expect(200);
 
     expect(await prisma.stock.count()).toBe(0);
+  });
+
+  it("flushes transactional data and logs while preserving master data", async () => {
+    await createUser("admin@example.com", "ChangeMe123!", "Admin");
+    const buyer = await createCompany({
+      name: "Flush Buyer",
+      legalName: "Flush Buyer LLC",
+      location: "Dubai",
+      email: "flush-buyer@example.com",
+    });
+    const seller = await createCompany({
+      name: "Flush Seller",
+      legalName: "Flush Seller LLC",
+      location: "Sharjah",
+      email: "flush-seller@example.com",
+    });
+    const item = await createItem({
+      sku: "FLUSH-ITEM",
+      name: "Flush Item",
+      unit: "code",
+      expectedPrice: 100,
+    });
+    await setStock(seller.id, item.id, 20);
+    await prisma.emailIntegration.create({
+      data: {
+        companyId: seller.id,
+        email: seller.email,
+        mode: "SIMULATION",
+        status: "READY_TO_CONNECT",
+      },
+    });
+    const target = await createMonthlyTarget({
+      buyerCompanyId: buyer.id,
+      sellerCompanyId: seller.id,
+      month: "2026-06",
+      lines: [{ itemId: item.id, quantity: 2, maxPrice: 110 }],
+    });
+    await prisma.agentAuditLog.create({ data: { targetId: target.id, step: "TEST", status: "OK", message: "flush test" } });
+    await prisma.emailLog.create({
+      data: {
+        requirementId: null,
+        direction: "OUTBOUND",
+        fromEmail: buyer.email,
+        toEmail: seller.email,
+        subject: "Flush test",
+        body: "Flush test",
+        status: "SENT",
+      },
+    });
+    const poDir = path.resolve(process.cwd(), "storage", "purchase-orders");
+    const invoiceDir = path.resolve(process.cwd(), "storage", "invoices");
+    const logsDir = path.resolve(process.cwd(), "storage", "logs");
+    fs.mkdirSync(poDir, { recursive: true });
+    fs.mkdirSync(invoiceDir, { recursive: true });
+    fs.mkdirSync(logsDir, { recursive: true });
+    fs.writeFileSync(path.join(poDir, "flush-po.pdf"), "test");
+    fs.writeFileSync(path.join(invoiceDir, "flush-invoice.pdf"), "test");
+    fs.writeFileSync(path.join(logsDir, "app-2026-06-05.log"), "{}\n");
+
+    const login = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "admin@example.com", password: "ChangeMe123!" })
+      .expect(200);
+
+    const flushed = await request(app)
+      .post("/api/maintenance/flush-transactional-data")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .expect(200);
+
+    expect(flushed.body.flushed).toBe(true);
+    expect(flushed.body.deletedRecords.monthlyTargets).toBe(1);
+    expect(flushed.body.deletedRecords.emailLogs).toBe(1);
+    expect(flushed.body.deletedRecords.agentAuditLogs).toBe(1);
+    expect(await prisma.company.count()).toBe(2);
+    expect(await prisma.item.count()).toBe(1);
+    expect(await prisma.stock.count()).toBe(1);
+    expect(await prisma.emailIntegration.count()).toBe(1);
+    expect(await prisma.monthlyTarget.count()).toBe(0);
+    expect(await prisma.emailLog.count()).toBe(0);
+    expect(await prisma.agentAuditLog.count()).toBe(0);
+    expect(fs.readdirSync(poDir)).toEqual([]);
+    expect(fs.readdirSync(invoiceDir)).toEqual([]);
+    expect(fs.readdirSync(logsDir).filter((file) => file.endsWith(".log"))).toEqual([]);
   });
 
   it("parses a purchase invoice and adds received stock", async () => {

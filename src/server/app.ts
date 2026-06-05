@@ -13,6 +13,9 @@ import { invoiceRouter } from "./routes/invoices";
 import { emailIntegrationRouter } from "./routes/emailIntegrations";
 import { ecommerceRouter } from "./routes/ecommerce";
 import { businessPlanImportRouter } from "./routes/businessPlanImport";
+import { systemLogsRouter } from "./routes/systemLogs";
+import { maintenanceRouter } from "./routes/maintenance";
+import { logError, requestResponseLogger } from "./services/appLogger";
 import { prisma } from "./db";
 import { env } from "./env";
 
@@ -30,6 +33,7 @@ export function createApp() {
     credentials: false,
   }));
   app.use(express.json({ limit: "1mb" }));
+  app.use(requestResponseLogger);
   app.use("/api", rateLimit({
     windowMs: 60_000,
     limit: env.isProduction ? 120 : 1000,
@@ -54,6 +58,8 @@ export function createApp() {
   app.use("/api/email-integrations", emailIntegrationRouter);
   app.use("/api/ecommerce", ecommerceRouter);
   app.use("/api/business-plan-import", businessPlanImportRouter);
+  app.use("/api/system-logs", systemLogsRouter);
+  app.use("/api/maintenance", maintenanceRouter);
 
   app.use("/uploads/company-logos", express.static(path.resolve(process.cwd(), "storage", "company-logos")));
 
@@ -63,13 +69,15 @@ export function createApp() {
     res.sendFile(path.join(distPath, "index.html"));
   });
 
-  app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  app.use((error: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
     if (error instanceof ZodError) {
+      logError(error, req, 400);
       return res.status(400).json({ error: "Validation failed", details: error.flatten() });
     }
 
     const message = error instanceof Error ? error.message : "Unexpected server error";
     const status = message.includes("not found") ? 404 : 400;
+    logError(error, req, status);
     return res.status(status).json({ error: message });
   });
 

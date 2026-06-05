@@ -15,6 +15,7 @@ const envSchema = z.object({
   API_PORT: z.coerce.number().int().positive().default(4321),
   APP_ORIGIN: z.string().url().default("http://127.0.0.1:5321"),
   TRUST_PROXY: z.enum(["true", "false"]).default("false"),
+  APP_TIME_ZONE: z.string().default("Asia/Dubai"),
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
   GOOGLE_REDIRECT_URI: z.string().url().optional(),
@@ -34,6 +35,7 @@ export const env = {
   apiPort: parsed.API_PORT,
   appOrigin: parsed.APP_ORIGIN,
   trustProxy: parsed.TRUST_PROXY === "true",
+  appTimeZone: parsed.APP_TIME_ZONE,
   gmail: {
     clientId: parsed.GOOGLE_CLIENT_ID,
     clientSecret: parsed.GOOGLE_CLIENT_SECRET,

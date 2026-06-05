@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { createUser } from "../src/server/auth";
+import { appMonth } from "../src/shared/timezone";
 
 const prisma = new PrismaClient();
 
@@ -214,7 +215,7 @@ async function main() {
     },
   });
 
-  const currentMonth = new Date().toISOString().slice(0, 7);
+  const currentMonth = appMonth();
   await prisma.turnoverTarget.upsert({
     where: { companyId_type_month: { companyId: companyA.id, type: "PURCHASE", month: currentMonth } },
     update: {

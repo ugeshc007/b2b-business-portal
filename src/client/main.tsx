@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Building2, ChevronDown, ChevronUp, Download, Edit, FileText, LogIn, Mail, Package, Play, Plus, RefreshCcw, Save, Send, Settings, ShieldCheck, ShoppingCart, Square, Trash2, Truck, X } from "lucide-react";
+import { appDate, appDateTime, appMonthEnd, appMonthStart } from "../shared/timezone";
 import "./styles.css";
 
 const apiUrl = import.meta.env.VITE_API_URL ?? window.location.origin;
@@ -198,6 +199,34 @@ type BusinessPlanProductImportResult = {
   }>;
 };
 
+type SystemLogEntry = {
+  timestamp?: string;
+  level?: string;
+  event?: string;
+  method?: string;
+  path?: string;
+  statusCode?: number;
+  durationMs?: number;
+  message?: string;
+};
+
+type SystemLogResponse = {
+  status: {
+    logsDir: string;
+    retentionDays: number;
+    files: number;
+    totalBytes: number;
+  };
+  logs: SystemLogEntry[];
+};
+
+type FlushResult = {
+  flushed: boolean;
+  preserved: string[];
+  deletedRecords: Record<string, number>;
+  deletedFiles: Record<string, number>;
+};
+
 type View = "overview" | "stock" | "ecommerce" | "workflow" | "invoices" | "settings";
 
 function money(value: string | number) {
@@ -205,16 +234,15 @@ function money(value: string | number) {
 }
 
 function dateInputValue(date = new Date()) {
-  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return localDate.toISOString().slice(0, 10);
+  return appDate(date);
 }
 
 function monthStartInputValue(date = new Date()) {
-  return dateInputValue(new Date(date.getFullYear(), date.getMonth(), 1));
+  return appMonthStart(date);
 }
 
 function monthEndInputValue(date = new Date()) {
-  return dateInputValue(new Date(date.getFullYear(), date.getMonth() + 1, 0));
+  return appMonthEnd(date);
 }
 
 function mediaUrl(path?: string | null) {
@@ -253,7 +281,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [agentRunning, setAgentRunning] = useState(false);
   const [activeView, setActiveView] = useState<View>("overview");
-  const [settingsTab, setSettingsTab] = useState<"company" | "businessImport" | "email" | "log" | "audit">("company");
+  const [settingsTab, setSettingsTab] = useState<"company" | "businessImport" | "email" | "log" | "audit" | "systemLogs" | "maintenance">("company");
   const [showCreateCompany, setShowCreateCompany] = useState(false);
   const [businessPlanFile, setBusinessPlanFile] = useState<File | null>(null);
   const [businessPlanPreview, setBusinessPlanPreview] = useState<BusinessPlanPreview | null>(null);
@@ -348,6 +376,9 @@ function App() {
   const [imapEncryption, setImapEncryption] = useState<"TLS" | "SSL" | "NONE">("SSL");
   const [imapUsername, setImapUsername] = useState("");
   const [imapPassword, setImapPassword] = useState("");
+  const [systemLogLevel, setSystemLogLevel] = useState("ERROR");
+  const [systemLogs, setSystemLogs] = useState<SystemLogResponse | null>(null);
+  const [flushResult, setFlushResult] = useState<FlushResult | null>(null);
 
   async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const response = await fetch(`${apiUrl}${path}`, {
@@ -390,9 +421,28 @@ function App() {
     }
   }
 
+  async function loadSystemLogs(level = systemLogLevel) {
+    if (!token) return;
+    setLoading(true);
+    try {
+      const query = level === "ALL" ? "?limit=150" : `?level=${encodeURIComponent(level)}&limit=150`;
+      setSystemLogs(await request<SystemLogResponse>(`/api/system-logs${query}`));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not load system logs");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadSummary().catch((error) => setMessage(error.message));
   }, [token]);
+
+  useEffect(() => {
+    if (settingsTab === "systemLogs") {
+      loadSystemLogs().catch((error) => setMessage(error.message));
+    }
+  }, [settingsTab, systemLogLevel, token]);
 
   useEffect(() => {
     if (!token) return;
@@ -730,6 +780,29 @@ function App() {
           await loadSummary();
         } catch (error) {
           setStockLocalMessage(error instanceof Error ? error.message : "Could not delete stock");
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
+  }
+
+  function flushTransactionalData() {
+    setConfirmationToast({
+      title: "Flush transactional data?",
+      message: "This will clear workflows, invoices, purchase orders, ecommerce orders, email logs, agent audit logs, generated PDFs, and system logs. Companies, products, stock, users, and email configuration will remain.",
+      confirmLabel: "Flush Data",
+      danger: true,
+      onConfirm: async () => {
+        setLoading(true);
+        try {
+          const result = await request<FlushResult>("/api/maintenance/flush-transactional-data", { method: "POST" });
+          setFlushResult(result);
+          setSystemLogs(null);
+          setMessage("Transactional data and logs flushed.");
+          await loadSummary();
+        } catch (error) {
+          setMessage(error instanceof Error ? error.message : "Could not flush transactional data");
         } finally {
           setLoading(false);
         }
@@ -1735,23 +1808,25 @@ function App() {
 
         {message && <div className="banner">{message}</div>}
         {confirmationToast && (
-          <div className="toast-confirm">
-            <div>
-              <strong>{confirmationToast.title}</strong>
-              <span>{confirmationToast.message}</span>
-            </div>
-            <div className="toast-actions">
-              <button
-                type="button"
-                className={confirmationToast.danger ? "danger-button" : undefined}
-                disabled={loading}
-                onClick={confirmToastAction}
-              >
-                {confirmationToast.confirmLabel}
-              </button>
-              <button type="button" className="secondary-button" disabled={loading} onClick={cancelToastAction}>
-                Cancel
-              </button>
+          <div className="toast-overlay" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+            <div className="toast-confirm">
+              <div>
+                <strong id="confirm-title">{confirmationToast.title}</strong>
+                <span>{confirmationToast.message}</span>
+              </div>
+              <div className="toast-actions">
+                <button
+                  type="button"
+                  className={confirmationToast.danger ? "danger-button" : undefined}
+                  disabled={loading}
+                  onClick={confirmToastAction}
+                >
+                  {confirmationToast.confirmLabel}
+                </button>
+                <button type="button" className="secondary-button" disabled={loading} onClick={cancelToastAction}>
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -1840,7 +1915,7 @@ function App() {
                       <span>{activity.type}</span>
                       <span>{activity.title}</span>
                       <span>{activity.status}</span>
-                      <span>{new Date(activity.date).toLocaleString()}</span>
+                      <span>{appDateTime(activity.date)}</span>
                     </div>
                   ))}
                   {!(summary?.overview.recentActivity ?? []).length && <div className="empty-state">No database activity yet.</div>}
@@ -1867,6 +1942,12 @@ function App() {
               </button>
               <button type="button" className={settingsTab === "audit" ? "secondary-button active-tab" : "secondary-button"} onClick={() => setSettingsTab("audit")}>
                 <ShieldCheck size={17} /> Agent Audit
+              </button>
+              <button type="button" className={settingsTab === "systemLogs" ? "secondary-button active-tab" : "secondary-button"} onClick={() => setSettingsTab("systemLogs")}>
+                <Settings size={17} /> System Logs
+              </button>
+              <button type="button" className={settingsTab === "maintenance" ? "secondary-button active-tab" : "secondary-button"} onClick={() => setSettingsTab("maintenance")}>
+                <Trash2 size={17} /> Maintenance
               </button>
             </div>
 
@@ -2373,13 +2454,83 @@ function App() {
                 <div className="table">
                   {scopedAgentAuditLogs.map((auditLog) => (
                     <div className="row audit-row" key={auditLog.id}>
-                      <span>{new Date(auditLog.createdAt).toLocaleString()}</span>
+                      <span>{appDateTime(auditLog.createdAt)}</span>
                       <span>{auditLog.step} / {auditLog.status}</span>
                       <span>{auditLog.message}</span>
                     </div>
                   ))}
                   {!scopedAgentAuditLogs.length && <div className="empty-state">No agent audit activity yet.</div>}
                 </div>
+              </div>
+            )}
+
+            {settingsTab === "systemLogs" && (
+              <div className="settings-section system-log-section">
+                <div className="system-log-toolbar">
+                  <div>
+                    <strong>Request / Response Logs</strong>
+                    <span>Daily rotated files in server storage. Sensitive fields are redacted.</span>
+                  </div>
+                  <label>
+                    Level
+                    <select value={systemLogLevel} onChange={(event) => setSystemLogLevel(event.target.value)}>
+                      <option value="ERROR">Errors</option>
+                      <option value="WARN">Warnings</option>
+                      <option value="INFO">Info</option>
+                      <option value="ALL">All</option>
+                    </select>
+                  </label>
+                  <button type="button" onClick={() => loadSystemLogs()} disabled={loading}><RefreshCcw size={17} /> Refresh</button>
+                </div>
+
+                {systemLogs && (
+                  <div className="config-status ready">
+                    <strong>Log Rotation</strong>
+                    <span>Path: {systemLogs.status.logsDir}</span>
+                    <span>Retention: {systemLogs.status.retentionDays} days</span>
+                    <span>Files: {systemLogs.status.files}, Size: {(systemLogs.status.totalBytes / 1024).toFixed(1)} KB</span>
+                  </div>
+                )}
+
+                <div className="table system-log-table">
+                  {(systemLogs?.logs ?? []).map((log, index) => (
+                    <div className="row system-log-row" key={`${log.timestamp}-${index}`}>
+                      <span>{log.timestamp || "-"}</span>
+                      <span className={`status-badge ${(log.level || "").toLowerCase()}`}>{log.level || "-"}</span>
+                      <span>{log.event || "-"}</span>
+                      <span>{log.method || "-"} {log.path || ""}</span>
+                      <span>{log.statusCode || "-"}</span>
+                      <span>{log.durationMs === undefined ? "-" : `${log.durationMs} ms`}</span>
+                      <span>{log.message || "-"}</span>
+                    </div>
+                  ))}
+                  {systemLogs && !systemLogs.logs.length && <div className="empty-state">No logs found for this filter.</div>}
+                  {!systemLogs && <div className="empty-state">Open or refresh this tab to load logs.</div>}
+                </div>
+              </div>
+            )}
+
+            {settingsTab === "maintenance" && (
+              <div className="settings-section maintenance-section">
+                <div className="maintenance-card">
+                  <div>
+                    <strong>Flush Transactional Data</strong>
+                    <span>Clears workflow transactions, invoices, purchase orders, ecommerce orders, email logs, agent audit logs, generated PDFs, and application log files.</span>
+                    <span>Preserves company profiles, product master, stock, users, email configuration, and app settings.</span>
+                  </div>
+                  <button type="button" className="danger-button" disabled={loading} onClick={flushTransactionalData}>
+                    <Trash2 size={17} /> Flush Data
+                  </button>
+                </div>
+
+                {flushResult && (
+                  <div className="config-status ready">
+                    <strong>Flush Complete</strong>
+                    <span>Records deleted: {Object.entries(flushResult.deletedRecords).map(([key, value]) => `${key} ${value}`).join(", ")}</span>
+                    <span>Files deleted: {Object.entries(flushResult.deletedFiles).map(([key, value]) => `${key} ${value}`).join(", ")}</span>
+                    <span>Preserved: {flushResult.preserved.join(", ")}</span>
+                  </div>
+                )}
               </div>
             )}
           </Panel>
@@ -2526,7 +2677,7 @@ function App() {
             <div className="table">
               {scopedEcommerceOrders.map((order) => (
                 <div className="row ecom-order-row" key={order.id}>
-                  <span>{new Date(order.createdAt).toLocaleString()}</span>
+                  <span>{appDateTime(order.createdAt)}</span>
                   <span>{order.item.sku} x {order.quantity}</span>
                   <span>{order.buyerCompany.name} buying from {order.sellerCompany.name}</span>
                   <span>{money(order.total)}</span>
@@ -2884,7 +3035,7 @@ function App() {
                     <div>
                       <strong>Reference</strong>
                       <span>PO {invoiceDetail.purchaseOrder.poNumber}</span>
-                      <span>{new Date(invoiceDetail.createdAt).toLocaleDateString()}</span>
+                      <span>{appDate(invoiceDetail.createdAt)}</span>
                     </div>
                   </div>
 
