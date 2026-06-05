@@ -260,6 +260,7 @@ function App() {
   const [businessProductImportResult, setBusinessProductImportResult] = useState<BusinessPlanProductImportResult | null>(null);
   const [productPriceFile, setProductPriceFile] = useState<File | null>(null);
   const [productPriceImportResult, setProductPriceImportResult] = useState<BusinessPlanProductImportResult | null>(null);
+  const [stockLocalMessage, setStockLocalMessage] = useState("");
   const [expandedCompanyIds, setExpandedCompanyIds] = useState<string[]>([]);
   const [companyScopeId, setCompanyScopeId] = useState("ALL");
   const [profileCompanyId, setProfileCompanyId] = useState("");
@@ -725,10 +726,10 @@ function App() {
         setLoading(true);
         try {
           await request(`/api/catalog/stock/${stock.id}`, { method: "DELETE" });
-          setMessage(`${stock.item.sku} stock deleted from ${stock.company.name}.`);
+          setStockLocalMessage(`${stock.item.sku} stock deleted from ${stock.company.name}.`);
           await loadSummary();
         } catch (error) {
-          setMessage(error instanceof Error ? error.message : "Could not delete stock");
+          setStockLocalMessage(error instanceof Error ? error.message : "Could not delete stock");
         } finally {
           setLoading(false);
         }
@@ -2477,6 +2478,7 @@ function App() {
               </label>
               <button type="submit" disabled={loading}><Save size={17} /> Save Stock</button>
             </form>
+            {stockLocalMessage && <div className="local-success stock-local-message">{stockLocalMessage}</div>}
             <div className="table">
                   {scopedStock.map((stock) => (
                 <div className="row" key={stock.id}>
