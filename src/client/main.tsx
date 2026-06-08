@@ -3435,7 +3435,61 @@ function App() {
                   </div>
                 )}
 
-                {businessPlanPreview && (
+                {businessScenarioImportResult && (
+                  <div className="business-import-complete-panel">
+                    <div className="config-status ready">
+                      <strong>Business Plan Import Complete</strong>
+                      <span>Main company: {businessScenarioImportResult.company}</span>
+                      <span>Plan period: {businessScenarioImportResult.planPeriodDateFrom || "open"} to {businessScenarioImportResult.planPeriodDateTo || "open"}</span>
+                      <span>Partners: {businessScenarioImportResult.partnersCreated} created, {businessScenarioImportResult.partnersUpdated} updated.</span>
+                      <span>Targets: {businessScenarioImportResult.turnoverTargetsCreated} created, {businessScenarioImportResult.turnoverTargetsUpdated} updated. Rules saved: {businessScenarioImportResult.rulesSaved}.</span>
+                    </div>
+                    <div className="import-action-panel imported">
+                      <div>
+                        <strong>Scenario loaded into workflow</strong>
+                        <span>The workbook preview is complete. Continue from Company Profile or Workflow to review the imported partners, targets, and allocation rules.</span>
+                      </div>
+                      <div className="import-complete-actions">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const targetCompanyId = selectedBusinessPlanCompany?.id || (companyScopeId !== "ALL" ? companyScopeId : workflowSelectedCompanyId);
+                            if (targetCompanyId) {
+                              selectSidebarCompany(targetCompanyId);
+                              setProfileCompanyId(targetCompanyId);
+                              setCompanyPartnerTab("vendors");
+                            }
+                            setSettingsTab("company");
+                          }}
+                        >
+                          <Building2 size={17} /> View Company Profile
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const targetCompanyId = selectedBusinessPlanCompany?.id || (companyScopeId !== "ALL" ? companyScopeId : workflowSelectedCompanyId);
+                            if (targetCompanyId) {
+                              selectSidebarCompany(targetCompanyId);
+                              setPlanAgentCompanyId(targetCompanyId);
+                              setWorkflowCompanyId(targetCompanyId);
+                            }
+                            setWorkflowTab("uploaded");
+                            setActiveView("workflow");
+                          }}
+                        >
+                          <Play size={17} /> Open Workflow
+                        </button>
+                        {businessPlanPreview?.counts.products && !businessProductImportResult ? (
+                          <button type="button" disabled={loading} onClick={importBusinessPlanProducts}>
+                            <Package size={17} /> Import Products
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {businessPlanPreview && !businessScenarioImportResult && (
                   <div className="business-preview">
                     <div className="preview-metrics">
                       <Metric label="Companies" value={businessPlanPreview.counts.companies} />
@@ -3485,16 +3539,6 @@ function App() {
                       <div className="config-status ready">
                         <strong>Product Import Complete</strong>
                         <span>{businessProductImportResult.created} created, {businessProductImportResult.updated} updated, {businessProductImportResult.skipped} skipped.</span>
-                      </div>
-                    )}
-
-                    {businessScenarioImportResult && (
-                      <div className="config-status ready">
-                        <strong>Business Plan Import Complete</strong>
-                        <span>Main company: {businessScenarioImportResult.company}</span>
-                        <span>Plan period: {businessScenarioImportResult.planPeriodDateFrom || "open"} to {businessScenarioImportResult.planPeriodDateTo || "open"}</span>
-                        <span>Partners: {businessScenarioImportResult.partnersCreated} created, {businessScenarioImportResult.partnersUpdated} updated.</span>
-                        <span>Targets: {businessScenarioImportResult.turnoverTargetsCreated} created, {businessScenarioImportResult.turnoverTargetsUpdated} updated. Rules saved: {businessScenarioImportResult.rulesSaved}.</span>
                       </div>
                     )}
 
@@ -3594,22 +3638,6 @@ function App() {
                         <div className="empty-state">No business scenario detected in this workbook.</div>
                       )}
                     </section>
-
-                    {businessScenarioImportResult && (
-                      <section>
-                        <h3>Business Scenario Import Result</h3>
-                        <div className="table import-preview-table">
-                          {businessScenarioImportResult.rows.map((row) => (
-                            <div className="row" key={`${row.type}-${row.name}-${row.status}`}>
-                              <span>{row.type}</span>
-                              <span>{row.name}</span>
-                              <span className="status-badge completed">{row.status}</span>
-                              <span>{row.detail || "-"}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </section>
-                    )}
 
                     <section>
                       <h3>Company / Activity Preview</h3>

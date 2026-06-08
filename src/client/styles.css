@@ -1041,6 +1041,11 @@ nav .nav-button.active {
   gap: 16px;
 }
 
+.business-import-complete-panel {
+  display: grid;
+  gap: 14px;
+}
+
 .preview-metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(150px, 1fr));
@@ -1069,6 +1074,18 @@ nav .nav-button.active {
 
 .import-action-panel span {
   color: #66756a;
+}
+
+.import-action-panel.imported {
+  border-color: #91c4aa;
+  background: #f3fbf6;
+}
+
+.import-complete-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .import-preview-table {
