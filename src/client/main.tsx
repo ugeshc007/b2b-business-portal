@@ -699,9 +699,7 @@ function App() {
   const [agentAutoStart, setAgentAutoStart] = useState(true);
   const [agentAutoInvoice, setAgentAutoInvoice] = useState(true);
   const [planAgentCompanyId, setPlanAgentCompanyId] = useState("");
-  const [planAgentMonth, setPlanAgentMonth] = useState(() => appDate().slice(0, 7));
-  const [planAgentDateFrom, setPlanAgentDateFrom] = useState(() => monthStartInputValue());
-  const [planAgentDateTo, setPlanAgentDateTo] = useState(() => monthEndInputValue());
+  const [planAgentMonth] = useState(() => appDate().slice(0, 7));
   const [planAgentStatus, setPlanAgentStatus] = useState("");
   const [showBusinessPlanEditor, setShowBusinessPlanEditor] = useState(false);
   const [editingBusinessPlanId, setEditingBusinessPlanId] = useState("");
@@ -1851,8 +1849,9 @@ function App() {
 
   async function runImportedBusinessPlanAgent(event: React.FormEvent) {
     event.preventDefault();
-    if (!planAgentCompanyId || !planAgentMonth) {
-      setMessage("Select company and month before running business plan agent.");
+    const runMonth = selectedWorkflowBusinessPlan?.planPeriodDateFrom?.slice(0, 7) || planAgentMonth;
+    if (!planAgentCompanyId || !runMonth) {
+      setMessage("Select company before running business plan agent.");
       return;
     }
     const company = summary?.companies.find((entry) => entry.id === planAgentCompanyId);
@@ -1872,9 +1871,9 @@ function App() {
             method: "POST",
             body: JSON.stringify({
               companyId: planAgentCompanyId,
-              month: planAgentMonth,
-              dateFrom: selectedWorkflowBusinessPlan?.planPeriodDateFrom || planAgentDateFrom || undefined,
-              dateTo: selectedWorkflowBusinessPlan?.planPeriodDateTo || planAgentDateTo || undefined,
+              month: runMonth,
+              dateFrom: selectedWorkflowBusinessPlan?.planPeriodDateFrom || undefined,
+              dateTo: selectedWorkflowBusinessPlan?.planPeriodDateTo || undefined,
             }),
           });
           const status = `Completed ${result.purchase.invoices} purchase invoices and ${result.sales.invoices} sales invoices.`;
@@ -1913,8 +1912,9 @@ function App() {
   }
 
   async function runBusinessPlanById(plan: SavedBusinessPlan) {
-    if (!planAgentMonth) {
-      setMessage("Select month before starting the business plan agent.");
+    const runMonth = plan.planPeriodDateFrom?.slice(0, 7) || planAgentMonth;
+    if (!runMonth) {
+      setMessage("Set a plan period before starting the business plan agent.");
       return;
     }
     const controller = new AbortController();
@@ -1932,9 +1932,9 @@ function App() {
         body: JSON.stringify({
           companyId: plan.companyId,
           planId: plan.planId,
-          month: planAgentMonth,
-          dateFrom: plan.planPeriodDateFrom || planAgentDateFrom || undefined,
-          dateTo: plan.planPeriodDateTo || planAgentDateTo || undefined,
+          month: runMonth,
+          dateFrom: plan.planPeriodDateFrom || undefined,
+          dateTo: plan.planPeriodDateTo || undefined,
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -2010,6 +2010,8 @@ function App() {
     const transactionPercent = Number(form.get("transactionPercent") || 0);
     const purchaseInvoiceRuleText = String(form.get("purchaseInvoiceRuleText") ?? "").trim();
     const salesInvoiceRuleText = String(form.get("salesInvoiceRuleText") ?? "").trim();
+    const planPeriodDateFrom = String(form.get("planPeriodDateFrom") ?? "").trim();
+    const planPeriodDateTo = String(form.get("planPeriodDateTo") ?? "").trim();
     const purchaseVendors = parseBusinessPlanPartnerText(String(form.get("purchaseVendors") ?? ""), "SELLER");
     const salesCustomers = parseBusinessPlanPartnerText(String(form.get("salesCustomers") ?? ""), "BUYER");
     const salesAllocations = salesCustomers.map(({ name, allocationPercent, email, address }) => ({
@@ -2026,14 +2028,17 @@ function App() {
 
     setLoading(true);
     try {
+      const targetMonth = planPeriodDateFrom.slice(0, 7) || selectedWorkflowBusinessPlan.planPeriodDateFrom?.slice(0, 7) || planAgentMonth;
       await request(`/api/workflow/business-plan/${workflowSelectedCompanyId}/${encodeURIComponent(selectedWorkflowBusinessPlan.planId)}`, {
         method: "PATCH",
         body: JSON.stringify({
-          month: planAgentMonth,
+          month: targetMonth,
           purchaseTargetAmount: Number.isFinite(purchaseTargetAmount) ? purchaseTargetAmount : undefined,
           salesTargetAmount: Number.isFinite(salesTargetAmount) ? salesTargetAmount : undefined,
           plan: {
             ...selectedWorkflowBusinessPlan,
+            planPeriodDateFrom: planPeriodDateFrom || undefined,
+            planPeriodDateTo: planPeriodDateTo || undefined,
             purchasePlan: {
               ...selectedWorkflowBusinessPlan.purchasePlan,
               revenueTargetText: purchaseTargetAmount ? `AED ${purchaseTargetAmount}` : selectedWorkflowBusinessPlan.purchasePlan?.revenueTargetText,
@@ -2707,8 +2712,9 @@ function App() {
   const appendedWorkflowBusinessPlans = rawWorkflowBusinessPlans.filter((plan) => plan.planId.split(":").length > 2);
   const selectedWorkflowBusinessPlans = appendedWorkflowBusinessPlans.length ? appendedWorkflowBusinessPlans : rawWorkflowBusinessPlans;
   const selectedWorkflowBusinessPlan = selectedWorkflowBusinessPlans.find((plan) => plan.planId === editingBusinessPlanId) ?? selectedWorkflowBusinessPlans[0];
-  const selectedWorkflowPurchaseTarget = (summary?.turnoverTargets ?? []).find((target) => target.company.id === workflowSelectedCompanyId && target.type === "PURCHASE" && target.month === planAgentMonth);
-  const selectedWorkflowSalesTarget = (summary?.turnoverTargets ?? []).find((target) => target.company.id === workflowSelectedCompanyId && target.type === "SALES" && target.month === planAgentMonth);
+  const workflowPlanMonth = selectedWorkflowBusinessPlan?.planPeriodDateFrom?.slice(0, 7) || planAgentMonth;
+  const selectedWorkflowPurchaseTarget = (summary?.turnoverTargets ?? []).find((target) => target.company.id === workflowSelectedCompanyId && target.type === "PURCHASE" && target.month === workflowPlanMonth);
+  const selectedWorkflowSalesTarget = (summary?.turnoverTargets ?? []).find((target) => target.company.id === workflowSelectedCompanyId && target.type === "SALES" && target.month === workflowPlanMonth);
   const selectedBusinessPlanCompany = activeCompanies.find((company) => company.id === businessPlanCompanyId);
   const partnerCompanyOptions = portalOwnerCompany
     ? activeCompanies.filter((company) => isPartnerForCompany(company, portalOwnerCompany.id))
@@ -4383,22 +4389,6 @@ function App() {
                   {businessPlanCompanyOptions.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}
                 </select>
               </label>
-              <label>
-                Month
-                <input type="month" value={planAgentMonth} onChange={(event) => setPlanAgentMonth(event.target.value)} />
-              </label>
-              <label>
-                Date From
-                <input type="date" value={planAgentDateFrom} onChange={(event) => setPlanAgentDateFrom(event.target.value)} />
-              </label>
-              <label>
-                Date To
-                <input type="date" value={planAgentDateTo} onChange={(event) => setPlanAgentDateTo(event.target.value)} />
-              </label>
-              <label>
-                Products Per Invoice
-                <input value="Auto selected by system" disabled readOnly />
-              </label>
               {planAgentStatus && <div className="local-success stock-local-message">{planAgentStatus}</div>}
             </form>
             <section className="workflow-plan-card">
@@ -4453,11 +4443,19 @@ function App() {
                           {isEditingPlan && (
                             <form className="business-plan-edit-form" key={`edit-${plan.planId}-${planAgentMonth}`} onSubmit={saveBusinessPlanEdits}>
                               <label>
-                                Purchase Target For Selected Month
+                                Plan Period From
+                                <input name="planPeriodDateFrom" type="date" defaultValue={plan.planPeriodDateFrom ?? ""} />
+                              </label>
+                              <label>
+                                Plan Period To
+                                <input name="planPeriodDateTo" type="date" defaultValue={plan.planPeriodDateTo ?? ""} />
+                              </label>
+                              <label>
+                                Purchase Target For Plan Period
                                 <input name="purchaseTargetAmount" type="number" min="0" step="0.01" defaultValue={selectedWorkflowPurchaseTarget?.amount ?? plan.purchasePlan?.transactionAmountMin ?? ""} />
                               </label>
                               <label>
-                                Sales Target For Selected Month
+                                Sales Target For Plan Period
                                 <input name="salesTargetAmount" type="number" min="0" step="0.01" defaultValue={selectedWorkflowSalesTarget?.amount ?? selectedWorkflowPurchaseTarget?.amount ?? plan.purchasePlan?.transactionAmountMin ?? ""} />
                               </label>
                               <label>

@@ -144,6 +144,8 @@ workflowRouter.patch("/business-plan/:companyId/:planId", async (req, res, next)
         importedAt: z.string().optional(),
         excelMainCompanyName: z.string().optional(),
         mainCompanyId: z.string().optional(),
+        planPeriodDateFrom: dateSchema.optional(),
+        planPeriodDateTo: dateSchema.optional(),
         purchasePlan: z.record(z.string(), z.unknown()).optional(),
         salesPlan: z.record(z.string(), z.unknown()).optional(),
         purchaseVendors: z.array(z.object({

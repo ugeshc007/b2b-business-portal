@@ -11,6 +11,15 @@ function normalizeIdentity(value?: string | null) {
   return (value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
+function identityMatches(left?: string | null, right?: string | null) {
+  const normalizedLeft = normalizeIdentity(left);
+  const normalizedRight = normalizeIdentity(right);
+  if (!normalizedLeft || !normalizedRight) return false;
+  if (normalizedLeft === normalizedRight) return true;
+  if (normalizedLeft.length < 8 || normalizedRight.length < 8) return false;
+  return normalizedLeft.includes(normalizedRight) || normalizedRight.includes(normalizedLeft);
+}
+
 function parseBusinessPlanSetting(
   setting: { key: string; value: string; updatedAt: Date },
   companies: Array<{ id: string; name: string; legalName: string }>,
@@ -22,8 +31,8 @@ function parseBusinessPlanSetting(
     const resolvedCompany = companies.find((company) => company.id === companyId)
       ?? companies.find((company) => company.id === explicitCompanyId)
       ?? companies.find((company) => {
-        const planName = normalizeIdentity(plan.excelMainCompanyName ?? plan.companyName);
-        return planName && [company.name, company.legalName].some((value) => normalizeIdentity(value) === planName);
+        const planName = plan.excelMainCompanyName ?? plan.companyName;
+        return [company.name, company.legalName].some((value) => identityMatches(value, planName));
       });
     const resolvedCompanyId = resolvedCompany?.id ?? explicitCompanyId;
     return {

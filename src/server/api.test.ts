@@ -557,8 +557,8 @@ describe("api", () => {
   it("shows saved business plan under recreated matching company name", async () => {
     await createUser("admin@example.com", "ChangeMe123!", "Admin");
     const company = await createCompany({
-      name: "Recreated Workflow Company",
-      legalName: "Recreated Workflow Company LLC",
+      name: "Recreated Workflow Company - AUH Branch",
+      legalName: "Recreated Workflow Company LLC - AUH Branch",
       location: "Dubai",
       email: "recreated-workflow@example.com",
     });
@@ -568,7 +568,7 @@ describe("api", () => {
         value: JSON.stringify({
           importedAt: new Date().toISOString(),
           mainCompanyId: "deleted-company-id",
-          excelMainCompanyName: "Recreated Workflow Company",
+          excelMainCompanyName: "Recreated Workflow Company LLC - AUH",
           purchaseVendors: [{ name: "Vendor A", allocationPercent: 100 }],
           salesCustomers: [],
           salesAllocations: [],
