@@ -3,16 +3,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { prisma } from "../db";
 
-function normalizeCompanyIdentity(value: string) {
-  return String(value ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/\b(l\.?l\.?c|llc|w\.?l\.?l|s\.?p\.?s|fze|branch|trading|electronic|electronics)\b/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim()
-    .replace(/\s+/g, " ");
-}
-
 export async function createCompany(data: {
   name: string;
   legalName: string;
@@ -37,17 +27,8 @@ export async function createCompany(data: {
   }
   const exactExisting = await prisma.company.findUnique({ where: { email: data.email } })
     ?? await prisma.company.findFirst({ where: { OR: [{ name: data.name }, { legalName: data.legalName }] } });
-  const existing = exactExisting ?? (await prisma.company.findMany({
-    select: { id: true, name: true, legalName: true },
-  })).find((company) => {
-    const nameIdentity = normalizeCompanyIdentity(data.name);
-    const legalIdentity = normalizeCompanyIdentity(data.legalName);
-    return Boolean(nameIdentity || legalIdentity)
-      && [normalizeCompanyIdentity(company.name), normalizeCompanyIdentity(company.legalName)]
-        .some((identity) => identity && (identity === nameIdentity || identity === legalIdentity));
-  });
-  if (existing) {
-    return updateCompany(existing.id, data);
+  if (exactExisting) {
+    return updateCompany(exactExisting.id, data);
   }
   return prisma.company.create({
     data: { ...data, managedByCompanyId: data.managedByCompanyId || null, active: data.active ?? true, vatEnabled: data.vatEnabled ?? true, role: data.role ?? "BOTH" },

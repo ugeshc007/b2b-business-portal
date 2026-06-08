@@ -2721,9 +2721,9 @@ function App() {
     : activeCompanies;
   const allCustomerCompanyOptions = partnerCompanyOptions.filter(canBeCustomer);
   const allVendorCompanyOptions = partnerCompanyOptions.filter(canBeVendor);
-  const settingsCompanyOptions = portalOwnerCompany
-    ? (summary?.companies ?? []).filter((company) => isPartnerForCompany(company, portalOwnerCompany.id))
-    : summary?.companies ?? [];
+  const settingsCompanyOptions = !isCompanyPortal || companyScopeId === "ALL" || !portalOwnerCompany
+    ? summary?.companies ?? []
+    : (summary?.companies ?? []).filter((company) => isPartnerForCompany(company, portalOwnerCompany.id));
   const settingsCompaniesForTab = companyPartnerTab === "companies"
     ? settingsCompanyOptions.filter((company) => !company.managedByCompanyId)
     : companyPartnerTab === "customers"

@@ -344,6 +344,56 @@ describe("api", () => {
     expect(await prisma.company.count()).toBe(2);
   });
 
+  it("creates separate company profiles for different branches with similar names", async () => {
+    await createUser("admin@example.com", "ChangeMe123!", "Admin");
+    const login = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "admin@example.com", password: "ChangeMe123!" })
+      .expect(200);
+
+    const ajman = await request(app)
+      .post("/api/catalog/companies")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .send({
+        name: "Dealzarabia Electronics Trading L.L.C Ajman",
+        legalName: "Dealzarabia Electronics Trading L.L.C Ajman",
+        role: "BOTH",
+        location: "Ajman, UAE",
+        email: "dealz-ajman@example.com",
+        active: true,
+        vatEnabled: true,
+      })
+      .expect(201);
+
+    const auh = await request(app)
+      .post("/api/catalog/companies")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .send({
+        name: "Dealzarabia Electronics Trading L.L.C - AUH",
+        legalName: "Dealzarabia Electronics Trading L.L.C - AUH Branch",
+        role: "BOTH",
+        location: "Abu Dhabi, UAE",
+        email: "dealz-auh@example.com",
+        active: true,
+        vatEnabled: true,
+      })
+      .expect(201);
+
+    expect(auh.body.id).not.toBe(ajman.body.id);
+
+    const summary = await request(app)
+      .get("/api/dashboard/summary")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .expect(200);
+
+    const mainCompanies = summary.body.companies.filter((company: { managedByCompanyId?: string | null }) => !company.managedByCompanyId);
+    expect(mainCompanies.map((company: { name: string }) => company.name)).toEqual(expect.arrayContaining([
+      "Dealzarabia Electronics Trading L.L.C Ajman",
+      "Dealzarabia Electronics Trading L.L.C - AUH",
+    ]));
+    expect(mainCompanies).toHaveLength(2);
+  });
+
   it("uploads a company logo and exposes the preview path", async () => {
     await createUser("admin@example.com", "ChangeMe123!", "Admin");
     const company = await createCompany({
