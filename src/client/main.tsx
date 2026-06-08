@@ -85,7 +85,7 @@ type Target = {
   sellerCompany: Company;
   lines: Array<{ itemId: string; quantity: number; maxPrice?: string; item: Item }>;
 };
-type Invoice = { id: string; invoiceNumber: string; total: string; vatAmount: string; buyerCompany: Company; sellerCompany: Company };
+type Invoice = { id: string; invoiceNumber: string; total: string; vatAmount: string; createdAt: string; buyerCompany: Company; sellerCompany: Company };
 type InvoiceDetail = Invoice & {
   subtotal: string;
   createdAt: string;
@@ -2682,10 +2682,34 @@ function App() {
   const scopedEcommerceOrders = companyScopeId === "ALL"
     ? summary?.ecommerceOrders ?? []
     : (summary?.ecommerceOrders ?? []).filter((order) => order.buyerCompany.id === companyScopeId || order.sellerCompany.id === companyScopeId);
-  const dashboardTargetValue = scopedTurnoverTargets.reduce((sum, target) => sum + Number(target.amount), 0);
-  const dashboardPurchaseValue = scopedStockMovementReport.reduce((sum, row) => sum + Number(row.purchaseValue), 0);
-  const dashboardSalesValue = scopedStockMovementReport.reduce((sum, row) => sum + Number(row.salesValue), 0);
-  const dashboardProfitValue = scopedStockMovementReport.reduce((sum, row) => sum + Number(row.salesValue) - Number(row.soldQuantity) * Number(row.buyingPrice), 0);
+  const dashboardCompany = companyScopeId === "ALL" ? undefined : (summary?.companies ?? []).find((company) => company.id === companyScopeId);
+  const dashboardBusinessPlans = (summary?.businessPlans ?? []).filter((plan) =>
+    companyScopeId === "ALL" ? !plan.parseError : businessPlanBelongsToCompany(plan, dashboardCompany)
+  );
+  const dashboardBusinessPlan = dashboardBusinessPlans[0];
+  const dashboardPlanMonth = dashboardBusinessPlan?.planPeriodDateFrom?.slice(0, 7);
+  const dashboardPeriodFrom = dashboardBusinessPlan?.planPeriodDateFrom;
+  const dashboardPeriodTo = dashboardBusinessPlan?.planPeriodDateTo;
+  const dashboardPeriodInvoices = scopedInvoices.filter((invoice) => {
+    if (!dashboardPeriodFrom && !dashboardPeriodTo) return true;
+    const invoiceDate = appDate(invoice.createdAt);
+    return (!dashboardPeriodFrom || invoiceDate >= dashboardPeriodFrom) && (!dashboardPeriodTo || invoiceDate <= dashboardPeriodTo);
+  });
+  const dashboardPlanTargets = scopedTurnoverTargets.filter((target) =>
+    target.type === "PURCHASE"
+    && (!dashboardPlanMonth || target.month === dashboardPlanMonth)
+    && (!dashboardBusinessPlan || target.companyId === dashboardBusinessPlan.companyId || target.companyId === dashboardBusinessPlan.mainCompanyId || target.companyId === dashboardCompany?.id)
+  );
+  const dashboardPurchaseInvoices = companyScopeId === "ALL"
+    ? dashboardPeriodInvoices
+    : dashboardPeriodInvoices.filter((invoice) => invoice.buyerCompany.id === companyScopeId);
+  const dashboardSalesInvoices = companyScopeId === "ALL"
+    ? dashboardPeriodInvoices
+    : dashboardPeriodInvoices.filter((invoice) => invoice.sellerCompany.id === companyScopeId);
+  const dashboardTargetValue = dashboardPlanTargets.reduce((sum, target) => sum + Number(target.amount), 0);
+  const dashboardPurchaseValue = dashboardPurchaseInvoices.reduce((sum, invoice) => sum + Number(invoice.total), 0);
+  const dashboardSalesValue = dashboardSalesInvoices.reduce((sum, invoice) => sum + Number(invoice.total), 0);
+  const dashboardProfitValue = dashboardSalesValue - dashboardPurchaseValue;
   const dashboardStockValue = scopedStockMovementReport.reduce((sum, row) => sum + Number(row.balanceSellingValue), 0);
   const filteredPurchaseVendorWise = (reports?.purchase.vendorWise ?? []).filter((row) => reportVendorId === "ALL" || row.vendorId === reportVendorId);
   const filteredPurchaseProductWise = (reports?.purchase.productWise ?? []).filter((row) => reportProductId === "ALL" || row.itemId === reportProductId);
