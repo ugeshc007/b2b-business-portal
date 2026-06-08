@@ -639,6 +639,7 @@ function App() {
   const [businessPlanPreview, setBusinessPlanPreview] = useState<BusinessPlanPreview | null>(null);
   const [businessProductImportResult, setBusinessProductImportResult] = useState<BusinessPlanProductImportResult | null>(null);
   const [businessScenarioImportResult, setBusinessScenarioImportResult] = useState<BusinessPlanScenarioImportResult | null>(null);
+  const [pendingImportedBusinessPlan, setPendingImportedBusinessPlan] = useState<SavedBusinessPlan | null>(null);
   const [businessImportStatus, setBusinessImportStatus] = useState("Waiting for business plan file");
   const [businessImportProgress, setBusinessImportProgress] = useState(0);
   const [showBusinessImportProgress, setShowBusinessImportProgress] = useState(false);
@@ -1183,6 +1184,7 @@ function App() {
       setBusinessPlanPreview(data);
       setBusinessProductImportResult(null);
       setBusinessScenarioImportResult(null);
+      setPendingImportedBusinessPlan(null);
       setBusinessImportProgress(100);
       setBusinessImportStatus(`Preview ready: ${data.counts.companies} companies, ${data.counts.purchaseVendors} vendors, ${data.counts.salesCustomers} customers.`);
       setMessage(`Business plan preview ready: ${data.counts.companies} companies and ${data.counts.products} products detected.`);
@@ -1312,7 +1314,7 @@ function App() {
           setBusinessImportProgress(100);
           setBusinessImportStatus(`Import complete: ${data.partnersCreated} partners created, ${data.partnersUpdated} partners updated, ${data.rulesSaved} rule set saved.`);
           setMessage(`Business plan imported: ${data.partnersCreated} partners created, ${data.partnersUpdated} partners updated.`);
-          const nextSummary = await loadSummary();
+          const nextSummary = await loadSummary().catch(() => null);
           const importedCompanyName = data.rows?.find((row: BusinessPlanScenarioImportResult["rows"][number]) => row.type === "COMPANY")?.name;
           const importedCompany = (nextSummary?.companies ?? []).find((company) =>
             company.id === data.companyId
@@ -1322,6 +1324,25 @@ function App() {
             || company.name === importedCompanyName
             || company.legalName === importedCompanyName
           );
+          const fallbackCompanyId = data.companyId || importedCompany?.id || (businessPlanCompanyId !== "AUTO" ? businessPlanCompanyId : "");
+          if (data.planId && fallbackCompanyId && businessPlanPreview.scenario) {
+            setPendingImportedBusinessPlan({
+              planId: data.planId,
+              companyId: fallbackCompanyId,
+              companyName: data.companyName || importedCompany?.name || businessPlanPreview.scenario.mainCompany?.name || importedCompanyName || "Imported company",
+              importedAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              excelMainCompanyName: businessPlanPreview.scenario.mainCompany?.name,
+              mainCompanyId: fallbackCompanyId,
+              planPeriodDateFrom: data.planPeriodDateFrom || businessPlanPeriodFrom || undefined,
+              planPeriodDateTo: data.planPeriodDateTo || businessPlanPeriodTo || undefined,
+              purchaseVendors: businessPlanPreview.scenario.purchaseVendors,
+              salesCustomers: businessPlanPreview.scenario.salesCustomers,
+              salesAllocations: businessPlanPreview.scenario.salesAllocations,
+              purchasePlan: businessPlanPreview.scenario.purchasePlan,
+              salesPlan: businessPlanPreview.scenario.salesPlan,
+            });
+          }
           const importedPlan = data.planId
             ? (nextSummary?.businessPlans ?? []).find((plan) => plan.planId === data.planId || (importedCompany && businessPlanBelongsToCompany(plan, importedCompany)))
             : undefined;
@@ -2708,8 +2729,12 @@ function App() {
   const scopedEcommerceOrders = companyScopeId === "ALL"
     ? summary?.ecommerceOrders ?? []
     : (summary?.ecommerceOrders ?? []).filter((order) => order.buyerCompany.id === companyScopeId || order.sellerCompany.id === companyScopeId);
+  const allBusinessPlans = [
+    ...(summary?.businessPlans ?? []),
+    ...(pendingImportedBusinessPlan && !(summary?.businessPlans ?? []).some((plan) => plan.planId === pendingImportedBusinessPlan.planId) ? [pendingImportedBusinessPlan] : []),
+  ];
   const dashboardCompany = companyScopeId === "ALL" ? undefined : (summary?.companies ?? []).find((company) => company.id === companyScopeId);
-  const dashboardBusinessPlans = (summary?.businessPlans ?? []).filter((plan) =>
+  const dashboardBusinessPlans = allBusinessPlans.filter((plan) =>
     companyScopeId === "ALL" ? !plan.parseError : businessPlanBelongsToCompany(plan, dashboardCompany)
   );
   const dashboardBusinessPlan = dashboardBusinessPlans[0];
@@ -2774,7 +2799,7 @@ function App() {
   const workflowOtherCurrentPage = Math.min(workflowOtherPage, workflowOtherTotalPages);
   const pagedWorkflowTodayTargets = workflowTodayTargets.slice((workflowTodayCurrentPage - 1) * workflowPageSize, workflowTodayCurrentPage * workflowPageSize);
   const pagedWorkflowOtherTargets = workflowOtherTargets.slice((workflowOtherCurrentPage - 1) * workflowPageSize, workflowOtherCurrentPage * workflowPageSize);
-  const rawWorkflowBusinessPlans = (summary?.businessPlans ?? []).filter((plan) => businessPlanBelongsToCompany(plan, workflowSelectedCompany));
+  const rawWorkflowBusinessPlans = allBusinessPlans.filter((plan) => businessPlanBelongsToCompany(plan, workflowSelectedCompany));
   const appendedWorkflowBusinessPlans = rawWorkflowBusinessPlans.filter((plan) => plan.planId.split(":").length > 2);
   const selectedWorkflowBusinessPlans = appendedWorkflowBusinessPlans.length ? appendedWorkflowBusinessPlans : rawWorkflowBusinessPlans;
   const selectedWorkflowBusinessPlan = selectedWorkflowBusinessPlans.find((plan) => plan.planId === editingBusinessPlanId) ?? selectedWorkflowBusinessPlans[0];
