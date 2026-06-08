@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Building2, ChevronDown, ChevronUp, Download, Edit, FileText, LogIn, Mail, Package, Play, Plus, RefreshCcw, Save, Send, Settings, ShieldCheck, ShoppingCart, Square, Trash2, Truck, X } from "lucide-react";
 import { appDate, appDateTime, appMonthEnd, appMonthStart } from "../shared/timezone";
@@ -157,6 +157,41 @@ type ConfirmationToast = {
   typedPhrase?: string;
   onConfirm: () => Promise<void>;
 };
+type SavedBusinessPlan = {
+  planId: string;
+  companyId: string;
+  companyName: string;
+  importedAt?: string;
+  updatedAt?: string;
+  parseError?: string | null;
+  excelMainCompanyName?: string;
+  mainCompanyId?: string;
+  purchaseVendors?: Array<{ name: string; role?: string; allocationPercent?: number; address?: string; email?: string }>;
+  salesCustomers?: Array<{ name: string; role?: string; allocationPercent?: number; address?: string; email?: string; bank?: { bankName?: string; iban?: string; accountNumber?: string } }>;
+  salesAllocations?: Array<{ name: string; role?: string; allocationPercent?: number; address?: string; email?: string }>;
+  purchasePlan?: {
+    revenueTargetText?: string;
+    revenueTargetMin?: number;
+    revenueTargetMax?: number;
+    transactionPercent?: number;
+    transactionAmountMin?: number;
+    transactionAmountMax?: number;
+    invoiceRuleText?: string;
+    invoiceCountMin?: number;
+    invoiceCountMax?: number;
+    invoiceValueHint?: string;
+    productSpecification?: string;
+    priceRule?: string;
+  };
+  salesPlan?: {
+    revenueTargetText?: string;
+    priceRule?: string;
+    productSpecification?: string;
+    invoiceRuleText?: string;
+    invoiceCountMin?: number;
+    invoiceCountMax?: number;
+  };
+};
 type Summary = {
   counts: Record<string, number>;
   overview: Overview;
@@ -170,6 +205,7 @@ type Summary = {
   agentAuditLogs: AgentAuditLog[];
   emailIntegrations: EmailIntegration[];
   turnoverTargets: TurnoverTarget[];
+  businessPlans: SavedBusinessPlan[];
   ecommerceOrders: EcommerceOrder[];
 };
 
@@ -426,6 +462,21 @@ function percent(value: string | number | undefined) {
   return `${normalized.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
 }
 
+function businessPlanPartnerLines(
+  partners: Array<{ name: string; allocationPercent?: number; email?: string; address?: string }> = [],
+  allocations?: Array<{ name: string; allocationPercent?: number }>
+) {
+  return partners.map((partner) => {
+    const allocation = allocations?.find((entry) => entry.name.toLowerCase() === partner.name.toLowerCase());
+    return [
+      partner.name,
+      allocation?.allocationPercent ?? partner.allocationPercent ?? "",
+      partner.email ?? "",
+      partner.address ?? "",
+    ].join(" | ");
+  }).join("\n");
+}
+
 function roleLabel(role?: Company["role"]) {
   if (role === "BUYER") return "Customer";
   if (role === "SELLER") return "Vendor";
@@ -438,6 +489,14 @@ function canBeCustomer(company: Company) {
 
 function canBeVendor(company: Company) {
   return company.role === "SELLER" || company.role === "BOTH" || !company.role;
+}
+
+function isManagedCustomer(company: Company) {
+  return Boolean(company.managedByCompanyId) && canBeCustomer(company);
+}
+
+function isManagedVendor(company: Company) {
+  return Boolean(company.managedByCompanyId) && canBeVendor(company);
 }
 
 function isPartnerForCompany(company: Company, ownerCompanyId: string) {
@@ -638,6 +697,11 @@ function App() {
   const [planAgentDateTo, setPlanAgentDateTo] = useState(() => monthEndInputValue());
   const [planAgentLineCount, setPlanAgentLineCount] = useState("3");
   const [planAgentStatus, setPlanAgentStatus] = useState("");
+  const [showBusinessPlanEditor, setShowBusinessPlanEditor] = useState(false);
+  const [editingBusinessPlanId, setEditingBusinessPlanId] = useState("");
+  const [businessPlanRunStatus, setBusinessPlanRunStatus] = useState<Record<string, "IDLE" | "RUNNING" | "STOPPED" | "COMPLETED" | "FAILED">>({});
+  const businessPlanAbortControllers = useRef<Record<string, AbortController>>({});
+  const [workflowTab, setWorkflowTab] = useState<"uploaded" | "manual">("uploaded");
   const [showAdvancedWorkflow, setShowAdvancedWorkflow] = useState(false);
   const [editingTargetId, setEditingTargetId] = useState("");
   const [selectedInvoiceId, setSelectedInvoiceId] = useState("");
@@ -717,6 +781,7 @@ function App() {
         agentAuditLogs: nextSummary.agentAuditLogs ?? [],
         emailIntegrations: nextSummary.emailIntegrations ?? [],
         turnoverTargets: nextSummary.turnoverTargets ?? [],
+        businessPlans: nextSummary.businessPlans ?? [],
         ecommerceOrders: nextSummary.ecommerceOrders ?? [],
       });
     } finally {
@@ -801,6 +866,7 @@ function App() {
       ? summary.companies.find((company) => company.name.toLowerCase() === portalCompanyName.toLowerCase())
       : undefined;
     const defaultCompanyId = portalCompany?.id || summary.companies[0]?.id || "";
+    const defaultOwnerCompanyId = portalCompany?.id || summary.companies.find((company) => !company.managedByCompanyId)?.id || defaultCompanyId;
     if (portalCompany) {
       setCompanyScopeId(portalCompany.id);
       setReportCompanyId(portalCompany.id);
@@ -817,7 +883,7 @@ function App() {
     setDailyCompanyId((current) => portalCompany?.id || current || defaultCompanyId);
     setDailyCounterpartyId((current) => current || summary.companies.find((company) => company.id !== (portalCompany?.id || defaultCompanyId))?.id || "");
     setWorkflowCompanyId((current) => portalCompany?.id || current || defaultCompanyId);
-    setPlanAgentCompanyId((current) => portalCompany?.id || current || defaultCompanyId);
+    setPlanAgentCompanyId((current) => portalCompany?.id || current || defaultOwnerCompanyId);
     setWorkflowCounterpartyId((current) => current || summary.companies.find((company) => company.id !== (portalCompany?.id || defaultCompanyId))?.id || "");
     setTargetItemId((current) => current || summary.items[0]?.id || "");
     setSelectedInvoiceId((current) => current || summary.invoices[0]?.id || "");
@@ -863,6 +929,11 @@ function App() {
     if (activeView !== "reports") return;
     loadReports().catch((error) => setMessage(error.message));
   }, [activeView, reportMonth, reportCompanyId, token]);
+
+  useEffect(() => {
+    setShowBusinessPlanEditor(false);
+    setEditingBusinessPlanId("");
+  }, [planAgentCompanyId]);
 
   async function handleLogin(event: React.FormEvent) {
     event.preventDefault();
@@ -1491,6 +1562,8 @@ function App() {
     setWorkflowLineCount(String(target.lines.length || 1));
     setWorkflowProductMode(target.productMode ?? "SELECTED");
     setWorkflowItemIds(target.lines.map((line) => line.itemId || line.item.id));
+    setWorkflowTab("manual");
+    setShowAdvancedWorkflow(true);
     setMessage("Editing target.");
   }
 
@@ -1823,6 +1896,151 @@ function App() {
     } else if (parsed.isWeek) {
       setAgentDateFrom(parsed.today);
       setAgentDateTo(parsed.weekEnd);
+    }
+  }
+
+  async function runBusinessPlanById(plan: SavedBusinessPlan) {
+    if (!planAgentMonth) {
+      setMessage("Select month before starting the business plan agent.");
+      return;
+    }
+    const controller = new AbortController();
+    businessPlanAbortControllers.current[plan.planId] = controller;
+    setBusinessPlanRunStatus((current) => ({ ...current, [plan.planId]: "RUNNING" }));
+    setAgentRunning(true);
+    try {
+      const response = await fetch(`${apiUrl}/api/workflow/business-plan-agent/run`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          companyId: plan.companyId,
+          planId: plan.planId,
+          month: planAgentMonth,
+          dateFrom: planAgentDateFrom || undefined,
+          dateTo: planAgentDateTo || undefined,
+          lineCount: Number(planAgentLineCount),
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error ?? "Could not run business plan agent");
+      setBusinessPlanRunStatus((current) => ({ ...current, [plan.planId]: "COMPLETED" }));
+      setPlanAgentStatus(`Business plan completed: ${data.purchase?.invoices ?? 0} purchase invoices and ${data.sales?.invoices ?? 0} sales invoices.`);
+      await loadSummary();
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        setBusinessPlanRunStatus((current) => ({ ...current, [plan.planId]: "STOPPED" }));
+        setPlanAgentStatus("Business plan agent stopped from the UI.");
+      } else {
+        setBusinessPlanRunStatus((current) => ({ ...current, [plan.planId]: "FAILED" }));
+        setMessage(error instanceof Error ? error.message : "Could not run business plan agent");
+      }
+    } finally {
+      delete businessPlanAbortControllers.current[plan.planId];
+      setAgentRunning(false);
+    }
+  }
+
+  function stopBusinessPlanRun(planId: string) {
+    businessPlanAbortControllers.current[planId]?.abort();
+    setBusinessPlanRunStatus((current) => ({ ...current, [planId]: "STOPPED" }));
+  }
+
+  function selectSidebarCompany(companyId: string) {
+    setCompanyScopeId(companyId);
+    setReportCompanyId(companyId);
+    setBusinessPlanCompanyId(companyId);
+    setPlanAgentCompanyId(companyId);
+    setWorkflowCompanyId(companyId);
+    setStockCompanyId(companyId);
+    setPlanStockCompanyId(companyId);
+    setInvoiceCompanyId(companyId);
+    setEmailCompanyId(companyId);
+  }
+
+  function parseBusinessPlanPartnerText(text: string, role: "BUYER" | "SELLER") {
+    return text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const [name = "", percentText = "", email = "", address = ""] = line.split("|").map((part) => part.trim());
+        const allocationPercent = percentText ? Number(percentText.replace("%", "")) : undefined;
+        return {
+          name,
+          role,
+          allocationPercent: Number.isFinite(allocationPercent) ? allocationPercent : undefined,
+          email: email || undefined,
+          address: address || undefined,
+        };
+      })
+      .filter((partner) => partner.name);
+  }
+
+  async function saveBusinessPlanEdits(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedWorkflowBusinessPlan || !workflowSelectedCompanyId) {
+      setMessage("Select an uploaded business plan first.");
+      return;
+    }
+    const form = new FormData(event.currentTarget);
+    const purchaseTargetAmount = Number(form.get("purchaseTargetAmount") || 0);
+    const salesTargetAmount = Number(form.get("salesTargetAmount") || 0);
+    const transactionPercent = Number(form.get("transactionPercent") || 0);
+    const purchaseInvoiceRuleText = String(form.get("purchaseInvoiceRuleText") ?? "").trim();
+    const salesInvoiceRuleText = String(form.get("salesInvoiceRuleText") ?? "").trim();
+    const purchaseVendors = parseBusinessPlanPartnerText(String(form.get("purchaseVendors") ?? ""), "SELLER");
+    const salesCustomers = parseBusinessPlanPartnerText(String(form.get("salesCustomers") ?? ""), "BUYER");
+    const salesAllocations = salesCustomers.map(({ name, allocationPercent, email, address }) => ({
+      name,
+      role: "BUYER",
+      allocationPercent,
+      email,
+      address,
+    }));
+    if (!purchaseVendors.length && !salesCustomers.length) {
+      setMessage("Add at least one vendor or customer allocation before saving the business plan.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await request(`/api/workflow/business-plan/${workflowSelectedCompanyId}/${encodeURIComponent(selectedWorkflowBusinessPlan.planId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          month: planAgentMonth,
+          purchaseTargetAmount: Number.isFinite(purchaseTargetAmount) ? purchaseTargetAmount : undefined,
+          salesTargetAmount: Number.isFinite(salesTargetAmount) ? salesTargetAmount : undefined,
+          plan: {
+            ...selectedWorkflowBusinessPlan,
+            purchasePlan: {
+              ...selectedWorkflowBusinessPlan.purchasePlan,
+              revenueTargetText: purchaseTargetAmount ? `AED ${purchaseTargetAmount}` : selectedWorkflowBusinessPlan.purchasePlan?.revenueTargetText,
+              transactionAmountMin: Number.isFinite(purchaseTargetAmount) ? purchaseTargetAmount : selectedWorkflowBusinessPlan.purchasePlan?.transactionAmountMin,
+              transactionAmountMax: Number.isFinite(purchaseTargetAmount) ? purchaseTargetAmount : selectedWorkflowBusinessPlan.purchasePlan?.transactionAmountMax,
+              transactionPercent: Number.isFinite(transactionPercent) && transactionPercent > 0 ? transactionPercent / 100 : selectedWorkflowBusinessPlan.purchasePlan?.transactionPercent,
+              invoiceRuleText: purchaseInvoiceRuleText || selectedWorkflowBusinessPlan.purchasePlan?.invoiceRuleText,
+            },
+            salesPlan: {
+              ...selectedWorkflowBusinessPlan.salesPlan,
+              invoiceRuleText: salesInvoiceRuleText || selectedWorkflowBusinessPlan.salesPlan?.invoiceRuleText,
+            },
+            purchaseVendors,
+            salesCustomers,
+            salesAllocations,
+          },
+        }),
+      });
+      setShowBusinessPlanEditor(false);
+      setMessage("Uploaded business plan modified and saved.");
+      await loadSummary();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not save business plan changes");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -2448,34 +2666,25 @@ function App() {
   const filteredStockRows = (reports?.stock.rows ?? []).filter((row) =>
     reportProductId === "ALL" || (summary?.items ?? []).find((item) => item.id === reportProductId)?.sku === row.sku
   );
-  const activePortalLinks: Array<{ href: string; label: string }> = [];
-  const fallbackPortalLinks = [
-    { href: "/dealz", label: "Dealz" },
-    { href: "/buy2day", label: "Buy2day" },
-  ];
-  for (const company of activeCompanies) {
-    const haystack = `${company.name} ${company.legalName}`.toLowerCase();
-    const link = haystack.includes("dealzarabia") || haystack.includes("dealz")
-      ? { href: "/dealz", label: "Dealz" }
-      : haystack.includes("buy2day")
-        ? { href: "/buy2day", label: "Buy2day" }
-        : null;
-    if (link && !activePortalLinks.some((item) => item.href === link.href)) activePortalLinks.push(link);
-  }
-  const sidebarPortalLinks = summary ? activePortalLinks : fallbackPortalLinks;
-  const hierarchyCompanies = isCompanyPortal
-    ? []
-    : activeCompanies.filter((company) => !company.managedByCompanyId);
-  const hierarchyChildrenByCompany = new Map<string, Company[]>();
-  for (const company of activeCompanies) {
-    if (!company.managedByCompanyId) continue;
-    const children = hierarchyChildrenByCompany.get(company.managedByCompanyId) ?? [];
-    children.push(company);
-    hierarchyChildrenByCompany.set(company.managedByCompanyId, children);
-  }
   const visibleCompanyOptions = isCompanyPortal ? scopedCompanies : activeCompanies;
   const businessPlanOwnerOptions = visibleCompanyOptions.filter((company) => !company.managedByCompanyId);
   const businessPlanCompanyOptions = businessPlanOwnerOptions.length ? businessPlanOwnerOptions : visibleCompanyOptions;
+  const sidebarCompanyLinks = summary
+    ? activeCompanies.filter((company) => !company.managedByCompanyId)
+    : [];
+  const workflowSelectedCompanyId = planAgentCompanyId || businessPlanCompanyOptions[0]?.id || "";
+  const workflowSelectedCompany = businessPlanCompanyOptions.find((company) => company.id === workflowSelectedCompanyId);
+  const workflowScopedTargets = workflowSelectedCompanyId
+    ? scopedTargets.filter((target) => target.buyerCompany.id === workflowSelectedCompanyId || target.sellerCompany.id === workflowSelectedCompanyId)
+    : scopedTargets;
+  const workflowTodayTargets = workflowScopedTargets.filter((target) => target.targetDate === todayDate);
+  const workflowOtherTargets = workflowScopedTargets.filter((target) => target.targetDate !== todayDate);
+  const rawWorkflowBusinessPlans = (summary?.businessPlans ?? []).filter((plan) => plan.companyId === workflowSelectedCompanyId);
+  const appendedWorkflowBusinessPlans = rawWorkflowBusinessPlans.filter((plan) => plan.planId.split(":").length > 2);
+  const selectedWorkflowBusinessPlans = appendedWorkflowBusinessPlans.length ? appendedWorkflowBusinessPlans : rawWorkflowBusinessPlans;
+  const selectedWorkflowBusinessPlan = selectedWorkflowBusinessPlans.find((plan) => plan.planId === editingBusinessPlanId) ?? selectedWorkflowBusinessPlans[0];
+  const selectedWorkflowPurchaseTarget = (summary?.turnoverTargets ?? []).find((target) => target.company.id === workflowSelectedCompanyId && target.type === "PURCHASE" && target.month === planAgentMonth);
+  const selectedWorkflowSalesTarget = (summary?.turnoverTargets ?? []).find((target) => target.company.id === workflowSelectedCompanyId && target.type === "SALES" && target.month === planAgentMonth);
   const selectedBusinessPlanCompany = activeCompanies.find((company) => company.id === businessPlanCompanyId);
   const partnerCompanyOptions = portalOwnerCompany
     ? activeCompanies.filter((company) => isPartnerForCompany(company, portalOwnerCompany.id))
@@ -2488,8 +2697,8 @@ function App() {
   const settingsCompaniesForTab = companyPartnerTab === "companies"
     ? settingsCompanyOptions.filter((company) => !company.managedByCompanyId)
     : companyPartnerTab === "customers"
-      ? settingsCompanyOptions.filter(canBeCustomer)
-      : settingsCompanyOptions.filter(canBeVendor);
+      ? settingsCompanyOptions.filter(isManagedCustomer)
+      : settingsCompanyOptions.filter(isManagedVendor);
   const workflowSellerId = workflowDirection === "PURCHASE" ? workflowCounterpartyId : workflowCompanyId;
   const workflowProductOptions = (summary?.items ?? []).map((item) => {
     const stock = (summary?.stock ?? []).find((entry) => entry.company.id === workflowSellerId && entry.item.id === item.id);
@@ -2546,8 +2755,24 @@ function App() {
           <strong>{portalTitle}</strong>
         </div>
         <div className="portal-links">
-          {sidebarPortalLinks.map((link) => <a href={link.href} key={link.href}>{link.label}</a>)}
-          <a href="/">Admin</a>
+          {sidebarCompanyLinks.map((company) => (
+            <button
+              type="button"
+              key={company.id}
+              className={companyScopeId === company.id ? "active-portal-link" : ""}
+              onClick={() => selectSidebarCompany(company.id)}
+              title={company.legalName}
+            >
+              {company.name}
+            </button>
+          ))}
+          <button
+            type="button"
+            className={companyScopeId === "ALL" ? "active-portal-link" : ""}
+            onClick={() => setCompanyScopeId("ALL")}
+          >
+            Admin
+          </button>
         </div>
         <nav>
           <NavButton icon={<Building2 size={18} />} label="Overview" view="overview" activeView={activeView} onSelect={setActiveView} />
@@ -2736,53 +2961,10 @@ function App() {
 
             {settingsTab === "company" && (
               <div className="company-card-list">
-                {!!hierarchyCompanies.length && (
-                  <div className="hierarchy-nav settings-hierarchy-nav">
-                    <div className="hierarchy-title">
-                      <span>Company Tree</span>
-                      <button type="button" onClick={() => setCompanyScopeId("ALL")} className={companyScopeId === "ALL" ? "active-scope" : ""}>All</button>
-                    </div>
-                    <div className="settings-hierarchy-grid">
-                      {hierarchyCompanies.map((company) => {
-                        const children = hierarchyChildrenByCompany.get(company.id) ?? [];
-                        return (
-                          <div className="hierarchy-group" key={company.id}>
-                            <button
-                              type="button"
-                              className={companyScopeId === company.id ? "hierarchy-company active" : "hierarchy-company"}
-                              onClick={() => setCompanyScopeId(company.id)}
-                              title={company.legalName}
-                            >
-                              <Building2 size={15} />
-                              <span>{company.name}</span>
-                              <small>{children.length} linked</small>
-                            </button>
-                            {!!children.length && (
-                              <div className="hierarchy-children">
-                                {children.map((child) => (
-                                  <button
-                                    type="button"
-                                    key={child.id}
-                                    className={companyScopeId === child.id ? "hierarchy-child active" : "hierarchy-child"}
-                                    onClick={() => setCompanyScopeId(child.id)}
-                                    title={`${child.legalName} - ${roleLabel(child.role)}`}
-                                  >
-                                    <span>{child.name}</span>
-                                    <small>{roleLabel(child.role)}</small>
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-                <div className="company-list-toolbar">
+                <div className="company-list-toolbar manual-creation-toolbar">
                   <div>
-                    <strong>Companies</strong>
-                    <span>Create, activate, deactivate, edit, or delete company profiles.</span>
+                    <strong>Manual Creation</strong>
+                    <span>Add one company, customer, or vendor by answering the required questions first.</span>
                   </div>
                   <button
                     type="button"
@@ -2797,8 +2979,8 @@ function App() {
                   <form className="company-settings-card create-company-card" onSubmit={createCompanyCard}>
                     <div className="company-card-head">
                       <div>
-                        <strong>Create Company</strong>
-                        <span>Onboard a customer, vendor, or a partner that works as both.</span>
+                        <strong>New Record Questionnaire</strong>
+                        <span>Fill the required answers. Tax and bank details can be added now or later.</span>
                       </div>
                       <label className="company-active-toggle compact-toggle">
                         <span>
@@ -2813,75 +2995,97 @@ function App() {
                         </span>
                       </label>
                     </div>
-                    <div className="company-card-fields">
-                      <label>
-                        Display Name
-                        <input name="name" placeholder="Short portal name" />
-                      </label>
-                      <label>
-                        Legal Company Name
-                        <input name="legalName" placeholder="Legal trade license name" />
-                      </label>
-                      <label>
-                        Partner Type
-                        <select name="role" defaultValue="BOTH">
-                          <option value="BUYER">Customer</option>
-                          <option value="SELLER">Vendor</option>
-                          <option value="BOTH">Customer & Vendor</option>
-                        </select>
-                      </label>
-                      <label>
-                        Managed Under Company
-                        <select name="managedByCompanyId" defaultValue={portalOwnerCompany?.id ?? ""}>
-                          <option value="">Main company / no owner</option>
-                          {activeCompanies.map((company) => (
-                            <option value={company.id} key={company.id}>{company.name}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label>
-                        TRN / Tax Number
-                        <input name="trn" placeholder="Optional" />
-                      </label>
-                      <label>
-                        Email For PO / Invoice
-                        <input name="email" type="email" placeholder="finance@example.com" />
-                      </label>
-                      <label className="company-card-address">
-                        Address
-                        <textarea name="location" placeholder="Company address" />
-                      </label>
-                      <label>
-                        Bank Name
-                        <input name="bankName" placeholder="Optional" />
-                      </label>
-                      <label>
-                        Beneficiary Account Name
-                        <input name="bankBeneficiaryName" placeholder="Optional" />
-                      </label>
-                      <label>
-                        Account Number
-                        <input name="bankAccountNumber" placeholder="Optional" />
-                      </label>
-                      <label>
-                        IBAN Number
-                        <input name="bankIban" placeholder="Optional" />
-                      </label>
-                      <label>
-                        CID
-                        <input name="bankCid" placeholder="Optional" />
-                      </label>
-                      <label>
-                        Bank Branch
-                        <input name="bankBranch" placeholder="Optional" />
-                      </label>
+                    <div className="questionnaire-grid">
+                      <fieldset className="question-card">
+                        <legend>1. What are you adding?</legend>
+                        <label>
+                          Record Type
+                          <select name="role" defaultValue="BOTH">
+                            <option value="BUYER">Customer</option>
+                            <option value="SELLER">Vendor</option>
+                            <option value="BOTH">Customer & Vendor</option>
+                          </select>
+                        </label>
+                        <label>
+                          Belongs Under
+                          <select name="managedByCompanyId" defaultValue={portalOwnerCompany?.id ?? ""}>
+                            <option value="">Main company / no owner</option>
+                            {activeCompanies.map((company) => (
+                              <option value={company.id} key={company.id}>{company.name}</option>
+                            ))}
+                          </select>
+                        </label>
+                      </fieldset>
+
+                      <fieldset className="question-card">
+                        <legend>2. What is the company identity?</legend>
+                        <label>
+                          Display Name
+                          <input name="name" placeholder="Short portal name" />
+                        </label>
+                        <label>
+                          Legal Company Name
+                          <input name="legalName" placeholder="Legal trade license name" />
+                        </label>
+                      </fieldset>
+
+                      <fieldset className="question-card">
+                        <legend>3. Where do we send documents?</legend>
+                        <label>
+                          Email For PO / Invoice
+                          <input name="email" type="email" placeholder="finance@example.com" />
+                        </label>
+                        <label>
+                          Address
+                          <textarea name="location" placeholder="Company address" />
+                        </label>
+                      </fieldset>
                     </div>
+                    <details className="optional-details-card">
+                      <summary>Optional tax and bank details</summary>
+                      <div className="company-card-fields optional-bank-fields">
+                        <label>
+                          TRN / Tax Number
+                          <input name="trn" placeholder="Optional" />
+                        </label>
+                        <label>
+                          Bank Name
+                          <input name="bankName" placeholder="Optional" />
+                        </label>
+                        <label>
+                          Beneficiary Account Name
+                          <input name="bankBeneficiaryName" placeholder="Optional" />
+                        </label>
+                        <label>
+                          Account Number
+                          <input name="bankAccountNumber" placeholder="Optional" />
+                        </label>
+                        <label>
+                          IBAN Number
+                          <input name="bankIban" placeholder="Optional" />
+                        </label>
+                        <label>
+                          CID
+                          <input name="bankCid" placeholder="Optional" />
+                        </label>
+                        <label>
+                          Bank Branch
+                          <input name="bankBranch" placeholder="Optional" />
+                        </label>
+                      </div>
+                    </details>
                     <div className="company-card-actions">
                       <button type="submit" disabled={loading}><Building2 size={17} /> Create Company</button>
                       <button type="reset" className="secondary-button" disabled={loading}>Clear</button>
                     </div>
                   </form>
                 )}
+                <div className="company-list-toolbar uploaded-records-toolbar">
+                  <div>
+                    <strong>Uploaded / Existing Records</strong>
+                    <span>Records imported from business plans or already created in the system. Expand any row to edit details.</span>
+                  </div>
+                </div>
                 <div className="partner-list-card">
                   <div className="partner-list-tabs">
                     <button
@@ -2898,7 +3102,7 @@ function App() {
                       onClick={() => setCompanyPartnerTab("customers")}
                     >
                       <Building2 size={17} /> Customers
-                      <span>{settingsCompanyOptions.filter(canBeCustomer).length}</span>
+                      <span>{settingsCompanyOptions.filter(isManagedCustomer).length}</span>
                     </button>
                     <button
                       type="button"
@@ -2906,28 +3110,8 @@ function App() {
                       onClick={() => setCompanyPartnerTab("vendors")}
                     >
                       <Building2 size={17} /> Vendors
-                      <span>{settingsCompanyOptions.filter(canBeVendor).length}</span>
+                      <span>{settingsCompanyOptions.filter(isManagedVendor).length}</span>
                     </button>
-                  </div>
-                  <div className="partner-list-content">
-                    {settingsCompaniesForTab.map((company) => (
-                      <div className="partner-list-row" key={`${companyPartnerTab}-${company.id}`}>
-                        <div className="company-logo-preview partner-logo">
-                          <CompanyLogoPreview company={company} />
-                        </div>
-                        <div>
-                          <strong>{company.name}</strong>
-                          <span>{company.legalName}</span>
-                          <small>{company.email}</small>
-                        </div>
-                        <span>{company.managedByCompany ? `Under ${company.managedByCompany.name}` : "Main company"}</span>
-                        <span className="status-badge open">{roleLabel(company.role)}</span>
-                        <span className={`status-badge ${company.active === false ? "stopped" : "completed"}`}>{company.active === false ? "Inactive" : "Active"}</span>
-                      </div>
-                    ))}
-                    {companyPartnerTab === "companies" && !settingsCompaniesForTab.length && <div className="empty-state">No companies onboarded yet.</div>}
-                    {companyPartnerTab === "customers" && !settingsCompanyOptions.filter(canBeCustomer).length && <div className="empty-state">No customers onboarded yet.</div>}
-                    {companyPartnerTab === "vendors" && !settingsCompanyOptions.filter(canBeVendor).length && <div className="empty-state">No vendors onboarded yet.</div>}
                   </div>
                 </div>
                 {settingsCompaniesForTab.map((company) => {
@@ -3110,6 +3294,9 @@ function App() {
                     </form>
                   );
                 })}
+                {companyPartnerTab === "companies" && !settingsCompaniesForTab.length && <div className="empty-state">No companies onboarded yet.</div>}
+                {companyPartnerTab === "customers" && !settingsCompanyOptions.filter(isManagedCustomer).length && <div className="empty-state">No customers onboarded yet.</div>}
+                {companyPartnerTab === "vendors" && !settingsCompanyOptions.filter(isManagedVendor).length && <div className="empty-state">No vendors onboarded yet.</div>}
               </div>
             )}
 
@@ -4130,12 +4317,36 @@ function App() {
 
         {activeView === "workflow" && (
           <Panel title={isCompanyPortal ? `${portalDisplayName} AI Agent Workflow` : "AI Agent Workflow"}>
-            <form className="agent-task-form business-plan-agent-form" onSubmit={runImportedBusinessPlanAgent}>
+            <div className="settings-tabs workflow-tabs">
+              <button type="button" className={workflowTab === "uploaded" ? "secondary-button active-tab" : "secondary-button"} onClick={() => setWorkflowTab("uploaded")}>
+                <FileText size={17} /> Uploaded / Created Workflows
+              </button>
+              <button type="button" className={workflowTab === "manual" ? "secondary-button active-tab" : "secondary-button"} onClick={() => setWorkflowTab("manual")}>
+                <Plus size={17} /> Manual Creation
+              </button>
+            </div>
+            {workflowTab === "uploaded" && (
+              <>
+            <div className="workflow-company-tabs">
+              {businessPlanCompanyOptions.map((company) => (
+                <button
+                  type="button"
+                  key={company.id}
+                  className={workflowSelectedCompanyId === company.id ? "secondary-button active-tab" : "secondary-button"}
+                  onClick={() => setPlanAgentCompanyId(company.id)}
+                >
+                  <Building2 size={16} />
+                  {company.name}
+                </button>
+              ))}
+              {!businessPlanCompanyOptions.length && <div className="empty-state">No active company available for workflow.</div>}
+            </div>
+            <form className="agent-task-form business-plan-agent-form" onSubmit={(event) => event.preventDefault()}>
               <label>
                 Business Plan Company
                 <select value={planAgentCompanyId} onChange={(event) => setPlanAgentCompanyId(event.target.value)} disabled={isCompanyPortal}>
                   <option value="">Select company</option>
-                  {visibleCompanyOptions.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}
+                  {businessPlanCompanyOptions.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}
                 </select>
               </label>
               <label>
@@ -4154,19 +4365,127 @@ function App() {
                 Random Products Per Invoice
                 <input type="number" min="1" max="20" step="1" value={planAgentLineCount} onChange={(event) => setPlanAgentLineCount(event.target.value)} />
               </label>
-              <button type="submit" disabled={loading || agentRunning || !planAgentCompanyId}>
-                <Play size={17} /> {agentRunning ? "Running Plan..." : "Run Business Plan Agent"}
-              </button>
               {planAgentStatus && <div className="local-success stock-local-message">{planAgentStatus}</div>}
             </form>
-            <div className="command-templates">
-              <button type="button" className="secondary-button" onClick={() => applyAgentTemplate("today")}>Create today PO</button>
-              <button type="button" className="secondary-button" onClick={() => applyAgentTemplate("multipleToday")}>Create multiple POs today</button>
-              <button type="button" className="secondary-button" onClick={() => applyAgentTemplate("weekly")}>Create weekly schedule</button>
-              <button type="button" className="secondary-button" onClick={() => applyAgentTemplate("monthly")}>Create monthly schedule</button>
-              <button type="button" className="secondary-button" onClick={() => applyAgentTemplate("buy")}>Buy from vendor</button>
-              <button type="button" className="secondary-button" onClick={() => applyAgentTemplate("sell")}>Sell to customer</button>
-            </div>
+            <section className="workflow-plan-card">
+              <div className="table-section-title">
+                <strong>Uploaded Business Plans</strong>
+                <span>{workflowSelectedCompany ? `${workflowSelectedCompany.name}: ` : ""}{selectedWorkflowBusinessPlans.length ? `${selectedWorkflowBusinessPlans.length} plan${selectedWorkflowBusinessPlans.length === 1 ? "" : "s"} uploaded` : "Select a company with imported plans"}</span>
+              </div>
+              {!workflowSelectedCompanyId && <div className="empty-state">Select a Business Plan Company to view the uploaded plan.</div>}
+              {workflowSelectedCompanyId && !selectedWorkflowBusinessPlans.length && (
+                <div className="empty-state">No uploaded business plan is saved for this company yet. Import one from Settings &gt; Business Plan Import.</div>
+              )}
+              <div className="workflow-plan-list">
+                {selectedWorkflowBusinessPlans.map((plan, index) => {
+                  const status = businessPlanRunStatus[plan.planId] ?? "IDLE";
+                  const isEditingPlan = showBusinessPlanEditor && editingBusinessPlanId === plan.planId;
+                  return (
+                    <article className="workflow-plan-item" key={plan.planId}>
+                      <div className="workflow-plan-item-head">
+                        <div>
+                          <strong>{plan.excelMainCompanyName || plan.companyName}</strong>
+                          <span>Plan #{selectedWorkflowBusinessPlans.length - index} - {plan.updatedAt ? `Updated ${appDateTime(plan.updatedAt)}` : "Uploaded plan"}</span>
+                        </div>
+                        <div className="workflow-plan-actions">
+                          <span className={`status-badge ${status === "RUNNING" ? "po_sent" : status === "FAILED" ? "held" : status === "STOPPED" ? "stopped" : status === "COMPLETED" ? "completed" : "open"}`}>{status}</span>
+                          <button type="button" disabled={loading || status === "RUNNING"} onClick={() => runBusinessPlanById(plan)}><Play size={16} /> Start Agent</button>
+                          <button type="button" className="secondary-button" disabled={status !== "RUNNING"} onClick={() => stopBusinessPlanRun(plan.planId)}><Square size={16} /> Stop</button>
+                          {!plan.parseError && (
+                            <button type="button" className="secondary-button" onClick={() => { setEditingBusinessPlanId(plan.planId); setShowBusinessPlanEditor((current) => editingBusinessPlanId === plan.planId ? !current : true); }}>
+                              <Edit size={16} /> {isEditingPlan ? "Close Modify" : "Modify Plan"}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      {plan.parseError ? (
+                        <div className="config-status missing">
+                          <strong>Saved plan needs review</strong>
+                          <span>{plan.parseError}</span>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="workflow-plan-summary">
+                            <Metric label="Plan Owner" value={plan.companyName} />
+                            <Metric label="Purchase Target" value={plan.purchasePlan?.transactionAmountMin === undefined ? "-" : money(plan.purchasePlan.transactionAmountMin)} />
+                            <Metric label="Transaction %" value={plan.purchasePlan?.transactionPercent === undefined ? "-" : percent(plan.purchasePlan.transactionPercent)} />
+                            <Metric label="Vendors" value={plan.purchaseVendors?.length ?? 0} />
+                            <Metric label="Customers" value={plan.salesCustomers?.length ?? 0} />
+                            <Metric label="Plan ID" value={plan.planId.split(":").at(-1) ?? plan.planId} />
+                          </div>
+                          {isEditingPlan && (
+                            <form className="business-plan-edit-form" key={`edit-${plan.planId}-${planAgentMonth}`} onSubmit={saveBusinessPlanEdits}>
+                              <label>
+                                Purchase Target For Selected Month
+                                <input name="purchaseTargetAmount" type="number" min="0" step="0.01" defaultValue={selectedWorkflowPurchaseTarget?.amount ?? plan.purchasePlan?.transactionAmountMin ?? ""} />
+                              </label>
+                              <label>
+                                Sales Target For Selected Month
+                                <input name="salesTargetAmount" type="number" min="0" step="0.01" defaultValue={selectedWorkflowSalesTarget?.amount ?? selectedWorkflowPurchaseTarget?.amount ?? plan.purchasePlan?.transactionAmountMin ?? ""} />
+                              </label>
+                              <label>
+                                Transaction Percentage
+                                <input name="transactionPercent" type="number" min="0" max="100" step="0.01" defaultValue={plan.purchasePlan?.transactionPercent ? plan.purchasePlan.transactionPercent * 100 : ""} />
+                              </label>
+                              <label>
+                                Purchase Invoice Rule
+                                <input name="purchaseInvoiceRuleText" defaultValue={plan.purchasePlan?.invoiceRuleText ?? ""} />
+                              </label>
+                              <label>
+                                Sales Invoice Rule
+                                <input name="salesInvoiceRuleText" defaultValue={plan.salesPlan?.invoiceRuleText ?? ""} />
+                              </label>
+                              <label className="business-plan-edit-lines">
+                                Purchase Vendors
+                                <textarea name="purchaseVendors" defaultValue={businessPlanPartnerLines(plan.purchaseVendors)} />
+                                <small>One per line: Vendor Name | Allocation % | Email | Address</small>
+                              </label>
+                              <label className="business-plan-edit-lines">
+                                Sales Customers
+                                <textarea name="salesCustomers" defaultValue={businessPlanPartnerLines(plan.salesCustomers, plan.salesAllocations)} />
+                                <small>One per line: Customer Name | Allocation % | Email | Address</small>
+                              </label>
+                              <div className="company-card-actions">
+                                <button type="submit" disabled={loading}><Save size={17} /> Save Modified Plan</button>
+                                <button type="button" className="secondary-button" disabled={loading} onClick={() => setShowBusinessPlanEditor(false)}>Cancel</button>
+                              </div>
+                            </form>
+                          )}
+                          <div className="table workflow-plan-table">
+                            <div className="row table-header"><span>Section</span><span>Rule / Name</span><span>Allocation / Detail</span><span>Contact / Notes</span></div>
+                            <div className="row"><span>Purchase Plan</span><span>{plan.purchasePlan?.revenueTargetText || "Revenue target not set"}</span><span>{plan.purchasePlan?.transactionAmountMin === undefined ? "-" : `${money(plan.purchasePlan.transactionAmountMin)}${plan.purchasePlan.transactionPercent ? ` (${percent(plan.purchasePlan.transactionPercent)} of revenue)` : ""}`}</span><span>{plan.purchasePlan?.invoiceRuleText || "Invoice rule not set"}</span></div>
+                            <div className="row"><span>Sales Plan</span><span>{plan.salesPlan?.priceRule || plan.salesPlan?.productSpecification || "Sales rule not set"}</span><span>{plan.salesPlan?.invoiceRuleText || "-"}</span><span>{plan.salesPlan?.productSpecification || "-"}</span></div>
+                            {(plan.purchaseVendors ?? []).map((vendor) => <div className="row" key={`${plan.planId}-vendor-${vendor.name}`}><span>Vendor</span><span>{vendor.name}</span><span>{vendor.allocationPercent === undefined ? "Auto allocation" : `${percent(vendor.allocationPercent)} purchase`}</span><span>{vendor.email || vendor.address || "Contact can be added later"}</span></div>)}
+                            {(plan.salesCustomers ?? []).map((customer) => {
+                              const allocation = plan.salesAllocations?.find((entry) => entry.name.toLowerCase() === customer.name.toLowerCase());
+                              return <div className="row" key={`${plan.planId}-customer-${customer.name}`}><span>Customer</span><span>{customer.name}</span><span>{allocation?.allocationPercent === undefined ? "Auto allocation" : `${percent(allocation.allocationPercent)} sales`}</span><span>{customer.email || customer.address || customer.bank?.bankName || "Contact can be added later"}</span></div>;
+                            })}
+                          </div>
+                        </>
+                      )}
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+              </>
+            )}
+            {workflowTab === "manual" && (
+              <>
+            <div className="manual-agent-section">
+              <div className="table-section-title manual-agent-title">
+                <strong>Manual Agent Commands</strong>
+                <span>Optional one-off instructions outside uploaded business plans.</span>
+                {agentRunning && <span className="status-badge po_sent">RUNNING</span>}
+              </div>
+              <div className="command-templates">
+                <button type="button" className="secondary-button" onClick={() => applyAgentTemplate("today")}>Create today PO</button>
+                <button type="button" className="secondary-button" onClick={() => applyAgentTemplate("multipleToday")}>Create multiple POs today</button>
+                <button type="button" className="secondary-button" onClick={() => applyAgentTemplate("weekly")}>Create weekly schedule</button>
+                <button type="button" className="secondary-button" onClick={() => applyAgentTemplate("monthly")}>Create monthly schedule</button>
+                <button type="button" className="secondary-button" onClick={() => applyAgentTemplate("buy")}>Buy from vendor</button>
+                <button type="button" className="secondary-button" onClick={() => applyAgentTemplate("sell")}>Sell to customer</button>
+              </div>
             <form className="agent-task-form" onSubmit={startAgentTask}>
               <label>
                 Tell Agent What To Do
@@ -4308,6 +4627,7 @@ function App() {
                 </button>
               </div>
             </form>
+            </div>
 
             {showAdvancedWorkflow && (
             <form className="workflow-planner-form" onSubmit={(event) => { event.preventDefault(); saveWorkflowTarget(false); }}>
@@ -4403,12 +4723,16 @@ function App() {
               </div>
             </form>
             )}
+              </>
+            )}
+            {workflowTab === "uploaded" && (
+              <>
             <div className="table-section-title">
               <strong>Today's Targets</strong>
-              <span>{todayDate}</span>
+              <span>{workflowSelectedCompany ? `${workflowSelectedCompany.name} - ` : ""}{todayDate}</span>
             </div>
             <div className="table">
-              {todayTargets.map((target) => (
+              {workflowTodayTargets.map((target) => (
                 <div className="row workflow-row" key={target.id}>
                   <span>{target.periodType === "DAILY" ? `${target.targetDate ?? target.dateFrom} ${target.hourFrom ?? ""}-${target.hourTo ?? ""}` : `${target.month} ${target.dateFrom ?? ""}-${target.dateTo ?? ""}`}</span>
                   <span>{target.buyerCompany.name} to {target.sellerCompany.name}</span>
@@ -4423,16 +4747,16 @@ function App() {
                   <button type="button" className="danger-button" onClick={() => deleteTarget(target.id)} disabled={loading || target.status !== "OPEN"}><Trash2 size={16} /> Delete</button>
                 </div>
               ))}
-              {!todayTargets.length && (
-                <div className="empty-state">No target created for today yet.</div>
+              {!workflowTodayTargets.length && (
+                <div className="empty-state">No target created for this company today yet.</div>
               )}
             </div>
             <div className="table-section-title">
               <strong>Other Workflow Targets</strong>
-              <span>{otherWorkflowTargets.length} total</span>
+              <span>{workflowSelectedCompany ? `${workflowSelectedCompany.name}: ` : ""}{workflowOtherTargets.length} total</span>
             </div>
             <div className="table">
-              {otherWorkflowTargets.map((target) => (
+              {workflowOtherTargets.map((target) => (
                 <div className="row workflow-row" key={target.id}>
                   <span>{target.periodType === "DAILY" ? `${target.targetDate ?? target.dateFrom} ${target.hourFrom ?? ""}-${target.hourTo ?? ""}` : `${target.month} ${target.dateFrom ?? ""}-${target.dateTo ?? ""}`}</span>
                   <span>{target.buyerCompany.name} to {target.sellerCompany.name}</span>
@@ -4447,10 +4771,12 @@ function App() {
                   <button type="button" className="danger-button" onClick={() => deleteTarget(target.id)} disabled={loading || target.status !== "OPEN"}><Trash2 size={16} /> Delete</button>
                 </div>
               ))}
-              {!otherWorkflowTargets.length && (
-                <div className="empty-state">No other workflow targets.</div>
+              {!workflowOtherTargets.length && (
+                <div className="empty-state">No other workflow targets for this company.</div>
               )}
             </div>
+              </>
+            )}
           </Panel>
         )}
 

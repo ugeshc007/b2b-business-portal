@@ -949,6 +949,69 @@ describe("api", () => {
     expect(reports.body.audit.events.some((event: { type: string }) => event.type === "INVOICE_GENERATED")).toBe(true);
   });
 
+  it("runs business plan agent from product master when stock rows are not created yet", async () => {
+    await createUser("admin@example.com", "ChangeMe123!", "Admin");
+    const main = await createCompany({
+      name: "Plan No Stock Main",
+      legalName: "Plan No Stock Main LLC",
+      location: "Dubai",
+      email: "plan-no-stock-main@example.com",
+    });
+    const customer = await createCompany({
+      name: "Plan No Stock Customer",
+      legalName: "Plan No Stock Customer LLC",
+      role: "BUYER",
+      managedByCompanyId: main.id,
+      location: "Abu Dhabi",
+      email: "plan-no-stock-customer@example.com",
+    });
+    await prisma.item.create({
+      data: {
+        sku: "NO-STOCK-A",
+        name: "No Stock Product A",
+        unit: "code",
+        expectedPrice: 100,
+        buyingPrice: 90,
+        maxPrice: 100,
+        vatRate: 0.05,
+      },
+    });
+    await prisma.turnoverTarget.create({
+      data: { companyId: main.id, type: "SALES", month: "2026-06", amount: 500, notes: "Sales only target" },
+    });
+    await prisma.appSetting.create({
+      data: {
+        key: `businessPlan:${main.id}`,
+        value: JSON.stringify({
+          mainCompanyId: main.id,
+          salesCustomers: [{ name: customer.name, allocationPercent: 100 }],
+          salesAllocations: [{ name: customer.name, allocationPercent: 100 }],
+          salesPlan: { invoiceRuleText: "Per invoice below AED 500", invoiceCountMin: 1, invoiceCountMax: 1 },
+        }),
+      },
+    });
+    const login = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "admin@example.com", password: "ChangeMe123!" })
+      .expect(200);
+
+    const result = await request(app)
+      .post("/api/workflow/business-plan-agent/run")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .send({
+        companyId: main.id,
+        month: "2026-06",
+        dateFrom: "2026-06-01",
+        dateTo: "2026-06-01",
+        lineCount: 1,
+      })
+      .expect(201);
+
+    expect(result.body.sales.invoices).toBe(1);
+    expect(await prisma.stockMovement.count({ where: { companyId: main.id, type: "SALE" } })).toBe(1);
+    expect(await prisma.agentAuditLog.count({ where: { step: "BUSINESS_PLAN_STOCK_PREPARED" } })).toBe(1);
+  });
+
   it("blocks deleting a company with transaction history", async () => {
     await createUser("admin@example.com", "ChangeMe123!", "Admin");
     const buyer = await createCompany({

@@ -433,171 +433,22 @@ textarea {
   margin-bottom: 20px;
 }
 
-.portal-links a {
+.portal-links a,
+.portal-links button {
+  justify-content: flex-start;
   color: #dfe8e2;
   text-decoration: none;
   border: 1px solid rgba(223, 232, 226, 0.2);
   border-radius: 6px;
   padding: 8px;
-}
-
-.portal-links a:hover {
-  background: #244b3b;
-}
-
-.hierarchy-nav {
-  display: grid;
-  gap: 8px;
-  margin: 0 0 20px;
-  padding: 10px;
-  border: 1px solid rgba(223, 232, 226, 0.18);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.hierarchy-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  color: #aebfb4;
-  font-size: 0.78rem;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.hierarchy-title button {
-  min-height: 26px;
-  padding: 0 8px;
-  border-color: rgba(223, 232, 226, 0.28);
   background: transparent;
-  color: #dfe8e2;
-  font-size: 0.78rem;
+  font-weight: 500;
 }
 
-.hierarchy-title button.active-scope,
-.hierarchy-title button:hover {
+.portal-links a:hover,
+.portal-links button:hover,
+.portal-links .active-portal-link {
   background: #244b3b;
-}
-
-.hierarchy-group {
-  display: grid;
-  gap: 4px;
-}
-
-.hierarchy-company,
-.hierarchy-child {
-  width: 100%;
-  justify-content: flex-start;
-  border: 0;
-  background: transparent;
-  color: #e7f0ea;
-  min-height: 32px;
-  padding: 6px 8px;
-  border-radius: 6px;
-}
-
-.hierarchy-company {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
-  text-align: left;
-  font-weight: 700;
-}
-
-.hierarchy-company span,
-.hierarchy-child span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.hierarchy-company small,
-.hierarchy-child small {
-  color: #bdd2c4;
-  font-size: 0.72rem;
-}
-
-.hierarchy-children {
-  display: grid;
-  gap: 3px;
-  padding-left: 18px;
-  border-left: 1px solid rgba(223, 232, 226, 0.18);
-  margin-left: 9px;
-}
-
-.hierarchy-child {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 6px;
-  text-align: left;
-  color: #d8e5dd;
-}
-
-.hierarchy-company:hover,
-.hierarchy-child:hover,
-.hierarchy-company.active,
-.hierarchy-child.active {
-  background: #244b3b;
-}
-
-.settings-hierarchy-nav {
-  margin: 0;
-  padding: 14px;
-  border-color: #d8dfda;
-  background: #ffffff;
-}
-
-.settings-hierarchy-nav .hierarchy-title {
-  color: #2d3b32;
-}
-
-.settings-hierarchy-nav .hierarchy-title button {
-  border-color: #244b3b;
-  color: #244b3b;
-}
-
-.settings-hierarchy-nav .hierarchy-title button.active-scope,
-.settings-hierarchy-nav .hierarchy-title button:hover,
-.settings-hierarchy-nav .hierarchy-company:hover,
-.settings-hierarchy-nav .hierarchy-child:hover,
-.settings-hierarchy-nav .hierarchy-company.active,
-.settings-hierarchy-nav .hierarchy-child.active {
-  color: #ffffff;
-  background: #244b3b;
-}
-
-.settings-hierarchy-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 10px;
-}
-
-.settings-hierarchy-nav .hierarchy-group {
-  padding: 10px;
-  border: 1px solid #edf1ee;
-  border-radius: 8px;
-  background: #f8fbf9;
-}
-
-.settings-hierarchy-nav .hierarchy-company,
-.settings-hierarchy-nav .hierarchy-child {
-  color: #21342a;
-}
-
-.settings-hierarchy-nav .hierarchy-company small,
-.settings-hierarchy-nav .hierarchy-child small {
-  color: #66756a;
-}
-
-.settings-hierarchy-nav .hierarchy-company:hover small,
-.settings-hierarchy-nav .hierarchy-child:hover small,
-.settings-hierarchy-nav .hierarchy-company.active small,
-.settings-hierarchy-nav .hierarchy-child.active small {
-  color: #e6f2eb;
-}
-
-.settings-hierarchy-nav .hierarchy-children {
-  border-left-color: #cfdcd4;
 }
 
 nav {
@@ -833,6 +684,19 @@ nav .nav-button.active {
   background: #fbfcfb;
 }
 
+.workflow-tabs {
+  align-items: center;
+}
+
+.workflow-company-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #e1e7e3;
+  background: #ffffff;
+}
+
 .settings-section {
   display: grid;
   gap: 0;
@@ -877,6 +741,16 @@ nav .nav-button.active {
   color: #66756a;
 }
 
+.manual-creation-toolbar {
+  padding-bottom: 0;
+}
+
+.uploaded-records-toolbar {
+  margin-top: 4px;
+  padding-top: 18px;
+  border-top: 1px solid #e1e7e3;
+}
+
 .company-settings-card {
   display: grid;
   gap: 14px;
@@ -889,6 +763,49 @@ nav .nav-button.active {
 .create-company-card {
   border-color: #b8cec1;
   background: #fbfdfb;
+}
+
+.questionnaire-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.question-card {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid #d8dfda;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.question-card legend {
+  padding: 0 6px;
+  color: #244b3b;
+  font-weight: 800;
+}
+
+.question-card label {
+  margin-top: 0;
+}
+
+.optional-details-card {
+  border: 1px dashed #c8d8ce;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.optional-details-card summary {
+  cursor: pointer;
+  padding: 12px 14px;
+  color: #244b3b;
+  font-weight: 800;
+}
+
+.optional-bank-fields {
+  padding: 0 14px 14px;
 }
 
 .company-card-head {
@@ -1199,6 +1116,130 @@ nav .nav-button.active {
 
 .agent-task-form > label:first-child {
   grid-column: span 2;
+}
+
+.workflow-plan-card {
+  margin: 0 16px 16px;
+  border: 1px solid #e1e7e3;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.workflow-plan-list {
+  display: grid;
+  gap: 14px;
+  padding: 14px 16px;
+  border-top: 1px solid #edf1ee;
+}
+
+.workflow-plan-item {
+  display: grid;
+  gap: 0;
+  border: 1px solid #d8dfda;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.workflow-plan-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px;
+  background: #fbfcfb;
+}
+
+.workflow-plan-item-head > div:first-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.workflow-plan-item-head span {
+  color: #66756a;
+}
+
+.workflow-plan-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.workflow-plan-summary {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
+  gap: 10px;
+  padding: 14px 16px;
+  border-top: 1px solid #edf1ee;
+}
+
+.workflow-plan-table {
+  overflow-x: auto;
+}
+
+.workflow-plan-table .row {
+  grid-template-columns: minmax(130px, 0.55fr) minmax(260px, 1.25fr) minmax(210px, 0.9fr) minmax(300px, 1.35fr);
+  min-width: 920px;
+}
+
+.workflow-plan-table .table-header {
+  font-weight: 700;
+  color: #2a382f;
+  background: #f4f8f5;
+}
+
+.business-plan-edit-form {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  gap: 12px;
+  padding: 14px 16px;
+  border-top: 1px solid #edf1ee;
+  background: #fbfcfb;
+}
+
+.business-plan-edit-form label {
+  margin-top: 0;
+}
+
+.business-plan-edit-lines {
+  grid-column: span 2;
+}
+
+.business-plan-edit-lines textarea {
+  min-height: 110px;
+}
+
+.business-plan-edit-lines small {
+  color: #66756a;
+}
+
+.business-plan-edit-form .company-card-actions {
+  grid-column: 1 / -1;
+  padding-top: 4px;
+}
+
+.manual-agent-section {
+  margin: 0 16px 16px;
+  border: 1px solid #e1e7e3;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.manual-agent-title {
+  align-items: center;
+}
+
+.manual-agent-title > span:first-of-type {
+  color: #66756a;
+}
+
+.manual-agent-title .secondary-button {
+  margin-left: auto;
 }
 
 .command-templates {
@@ -1865,10 +1906,15 @@ nav .nav-button.active {
     .random-target-form,
     .daily-target-form,
     .company-profile-form,
+    .workflow-plan-item-head,
     .profile-address,
     .company-card-fields,
+    .questionnaire-grid,
     .company-card-address,
     .agent-task-form,
+    .workflow-plan-summary,
+    .business-plan-edit-form,
+    .business-plan-edit-lines,
     .agent-progress-steps,
     .workflow-planner-form,
     .product-picker,

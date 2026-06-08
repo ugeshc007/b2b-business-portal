@@ -933,33 +933,36 @@ export async function importBusinessPlanScenario(buffer: Buffer, options: { comp
     });
   }
 
+  const importedAt = new Date().toISOString();
+  const savedPlan = {
+    importedAt,
+    mainCompanyId: mainCompany.id,
+    excelMainCompanyName: main.name,
+    purchaseVendors: preview.scenario.purchaseVendors,
+    salesCustomers: preview.scenario.salesCustomers,
+    salesAllocations: preview.scenario.salesAllocations,
+    purchasePlan: preview.scenario.purchasePlan,
+    salesPlan: preview.scenario.salesPlan,
+  };
+  const planKey = `businessPlan:${mainCompany.id}:${Date.now()}`;
+
+  await prisma.appSetting.create({
+    data: {
+      key: planKey,
+      value: JSON.stringify({ ...savedPlan, planKey }),
+      isSecret: false,
+    },
+  });
+
   await prisma.appSetting.upsert({
     where: { key: `businessPlan:${mainCompany.id}` },
     update: {
-      value: JSON.stringify({
-        importedAt: new Date().toISOString(),
-        mainCompanyId: mainCompany.id,
-        excelMainCompanyName: main.name,
-        purchaseVendors: preview.scenario.purchaseVendors,
-        salesCustomers: preview.scenario.salesCustomers,
-        salesAllocations: preview.scenario.salesAllocations,
-        purchasePlan: preview.scenario.purchasePlan,
-        salesPlan: preview.scenario.salesPlan,
-      }),
+      value: JSON.stringify({ ...savedPlan, planKey: `businessPlan:${mainCompany.id}` }),
       isSecret: false,
     },
     create: {
       key: `businessPlan:${mainCompany.id}`,
-      value: JSON.stringify({
-        importedAt: new Date().toISOString(),
-        mainCompanyId: mainCompany.id,
-        excelMainCompanyName: main.name,
-        purchaseVendors: preview.scenario.purchaseVendors,
-        salesCustomers: preview.scenario.salesCustomers,
-        salesAllocations: preview.scenario.salesAllocations,
-        purchasePlan: preview.scenario.purchasePlan,
-        salesPlan: preview.scenario.salesPlan,
-      }),
+      value: JSON.stringify({ ...savedPlan, planKey: `businessPlan:${mainCompany.id}` }),
       isSecret: false,
     },
   });

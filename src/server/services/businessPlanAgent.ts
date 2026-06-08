@@ -121,22 +121,44 @@ async function createAllocatedTarget(input: {
   lineCount: number;
   notes: string;
 }) {
-  const stock = await prisma.stock.findMany({
-    where: { companyId: input.sellerCompanyId, quantity: { gt: 0 }, item: { active: true } },
-    include: { item: true },
+  const items = await prisma.item.findMany({
+    where: { active: true },
+    orderBy: { sku: "asc" },
   });
-  if (!stock.length) throw new Error("Seller has no stock available for business plan agent");
-  const shuffled = [...stock].sort(() => Math.random() - 0.5).slice(0, Math.min(input.lineCount, stock.length));
+  if (!items.length) throw new Error("Product master is empty. Import products before running business plan agent.");
+  const shuffled = [...items].sort(() => Math.random() - 0.5).slice(0, Math.min(input.lineCount, items.length));
   const amountPerLine = input.amount / shuffled.length;
-  const lines = shuffled.map((stockRow) => {
-    const unitPrice = input.direction === "PURCHASE" ? itemBuyingPrice(stockRow.item) : itemSellingPrice(stockRow.item);
-    const quantity = Math.max(1, Math.min(stockRow.quantity, Math.round(amountPerLine / Math.max(Number(unitPrice), 0.01))));
+  const lines = shuffled.map((item) => {
+    const unitPrice = input.direction === "PURCHASE" ? itemBuyingPrice(item) : itemSellingPrice(item);
+    const quantity = Math.max(1, Math.round(amountPerLine / Math.max(Number(unitPrice), 0.01)));
     return {
-      itemId: stockRow.itemId,
+      itemId: item.id,
       quantity,
       maxPrice: Number(unitPrice),
     };
   });
+  for (const line of lines) {
+    const sellerStock = await prisma.stock.findUnique({
+      where: { companyId_itemId: { companyId: input.sellerCompanyId, itemId: line.itemId } },
+    });
+    const missingQuantity = Math.max(0, line.quantity - (sellerStock?.quantity ?? 0));
+    if (!missingQuantity) continue;
+    await prisma.stock.upsert({
+      where: { companyId_itemId: { companyId: input.sellerCompanyId, itemId: line.itemId } },
+      update: { quantity: { increment: missingQuantity } },
+      create: { companyId: input.sellerCompanyId, itemId: line.itemId, quantity: missingQuantity },
+    });
+    await logAgentAudit({
+      step: "BUSINESS_PLAN_STOCK_PREPARED",
+      message: "Business plan agent prepared product quantity from product master.",
+      metadata: {
+        sellerCompanyId: input.sellerCompanyId,
+        itemId: line.itemId,
+        missingQuantity,
+        direction: input.direction,
+      },
+    });
+  }
 
   return createMonthlyTarget({
     buyerCompanyId: input.buyerCompanyId,
@@ -164,12 +186,15 @@ async function runAndInvoiceTarget(targetId: string) {
 
 export async function runBusinessPlanAgent(input: {
   companyId: string;
+  planId?: string;
   month: string;
   dateFrom?: string;
   dateTo?: string;
   lineCount?: number;
 }) {
-  const setting = await prisma.appSetting.findUnique({ where: { key: `businessPlan:${input.companyId}` } });
+  const planKey = input.planId || `businessPlan:${input.companyId}`;
+  if (!planKey.startsWith(`businessPlan:${input.companyId}`)) throw new Error("Selected business plan does not belong to this company.");
+  const setting = await prisma.appSetting.findUnique({ where: { key: planKey } });
   if (!setting) throw new Error("Business plan rules not found for selected company. Import the business plan first.");
   const plan = JSON.parse(setting.value) as SavedBusinessPlan;
   const company = await prisma.company.findUnique({ where: { id: input.companyId } });
@@ -186,7 +211,7 @@ export async function runBusinessPlanAgent(input: {
   await logAgentAudit({
     step: "BUSINESS_PLAN_AGENT_STARTED",
     message: `Business plan agent started for ${company.name} ${input.month}.`,
-    metadata: { companyId: input.companyId, month: input.month, purchaseAmount, salesAmount },
+    metadata: { companyId: input.companyId, planId: planKey, month: input.month, purchaseAmount, salesAmount },
   });
 
   const result = {

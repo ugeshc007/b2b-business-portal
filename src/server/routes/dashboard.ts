@@ -7,9 +7,32 @@ import { getStockMovementReport } from "../services/stockLedger";
 export const dashboardRouter = Router();
 dashboardRouter.use(requireAuth);
 
+function parseBusinessPlanSetting(setting: { key: string; value: string; updatedAt: Date }, companyName?: string) {
+  const [, companyId = setting.key] = setting.key.split(":");
+  try {
+    const plan = JSON.parse(setting.value);
+    return {
+      planId: setting.key,
+      companyId,
+      companyName: companyName ?? companyId,
+      updatedAt: setting.updatedAt,
+      parseError: null,
+      ...plan,
+    };
+  } catch (error) {
+    return {
+      planId: setting.key,
+      companyId,
+      companyName: companyName ?? companyId,
+      updatedAt: setting.updatedAt,
+      parseError: error instanceof Error ? error.message : "Could not parse saved business plan",
+    };
+  }
+}
+
 dashboardRouter.get("/summary", async (_req, res, next) => {
   try {
-    const [companies, items, targets, requirements, quotations, orders, invoices, emails, stock, emailIntegrations, turnoverTargets, agentAuditLogs, ecommerceOrders, stockMovementReport] = await Promise.all([
+    const [companies, items, targets, requirements, quotations, orders, invoices, emails, stock, emailIntegrations, turnoverTargets, agentAuditLogs, ecommerceOrders, stockMovementReport, businessPlanSettings] = await Promise.all([
       prisma.company.findMany({ include: { managedByCompany: true } }),
       prisma.item.findMany(),
       prisma.monthlyTarget.findMany({
@@ -36,7 +59,16 @@ dashboardRouter.get("/summary", async (_req, res, next) => {
         take: 100,
       }),
       getStockMovementReport(),
+      prisma.appSetting.findMany({
+        where: { key: { startsWith: "businessPlan:" } },
+        orderBy: { updatedAt: "desc" },
+      }),
     ]);
+    const companyNameById = new Map(companies.map((company) => [company.id, company.name]));
+    const businessPlans = businessPlanSettings.map((setting) => {
+      const [, companyId = setting.key] = setting.key.split(":");
+      return parseBusinessPlanSetting(setting, companyNameById.get(companyId));
+    });
 
     const invoiceTotal = invoices.reduce((sum, invoice) => sum.plus(invoice.total), new Prisma.Decimal(0));
     const vatTotal = invoices.reduce((sum, invoice) => sum.plus(invoice.vatAmount), new Prisma.Decimal(0));
@@ -132,6 +164,7 @@ dashboardRouter.get("/summary", async (_req, res, next) => {
       stock,
       emailIntegrations,
       turnoverTargets,
+      businessPlans,
       stockMovementReport,
       agentAuditLogs,
       ecommerceOrders,
