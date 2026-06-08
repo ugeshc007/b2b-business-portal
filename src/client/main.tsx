@@ -486,7 +486,7 @@ function businessPlanPartnerLines(
   }).join("\n");
 }
 
-function businessPlanCustomers(plan: SavedBusinessPlan) {
+function businessPlanCustomers(plan: SavedBusinessPlan, companies: Company[] = []) {
   type PlanCustomer = { name: string; role?: string; allocationPercent?: number; address?: string; email?: string; bank?: { bankName?: string; iban?: string; accountNumber?: string } };
   const customers = new Map<string, PlanCustomer>();
   for (const customer of [...(plan.salesCustomers ?? []), ...(plan.salesAllocations ?? [])]) {
@@ -501,6 +501,22 @@ function businessPlanCustomers(plan: SavedBusinessPlan) {
       email: customer.email ?? existing?.email,
       address: customer.address ?? existing?.address,
       bank: customerBank ?? existing?.bank,
+    });
+  }
+  const ownerCompanyId = plan.mainCompanyId || plan.companyId;
+  for (const company of companies.filter((company) => company.managedByCompanyId === ownerCompanyId && canBeCustomer(company))) {
+    const key = normalizedBusinessName(company.name);
+    if (!key || customers.has(key)) continue;
+    customers.set(key, {
+      name: company.name,
+      role: company.role,
+      email: company.email,
+      address: company.location,
+      bank: {
+        bankName: company.bankName,
+        iban: company.bankIban,
+        accountNumber: company.bankAccountNumber,
+      },
     });
   }
   return [...customers.values()];
@@ -4695,7 +4711,7 @@ function App() {
                   const isEditingPlan = showBusinessPlanEditor && editingBusinessPlanId === plan.planId;
                   const isExpandedPlan = expandedWorkflowPlanIds.includes(plan.planId) || isEditingPlan;
                   const salesSummary = businessPlanSalesSummary(plan, summary?.targets ?? [], summary?.turnoverTargets ?? [], summary?.items ?? []);
-                  const mergedCustomers = businessPlanCustomers(plan);
+                  const mergedCustomers = businessPlanCustomers(plan, summary?.companies ?? []);
                   return (
                     <article className="workflow-plan-item" key={plan.planId}>
                       <div className="workflow-plan-item-head">
@@ -4749,9 +4765,9 @@ function App() {
                               <small>{salesSummary.totalSalesTargets} sales target{salesSummary.totalSalesTargets === 1 ? "" : "s"} created; {salesSummary.scheduledSalesCount} scheduled/open</small>
                             </div>
                             <div>
-                              <span>Total Sales Invoice Value</span>
+                              <span>Actual Sales Invoice Value</span>
                               <strong>{money(salesSummary.salesInvoiceValue)}</strong>
-                              <small>{salesSummary.salesInvoiceCount ? "Actual invoice value generated" : "No sales invoice generated yet"}</small>
+                              <small>{salesSummary.salesInvoiceCount ? "Generated from completed sales invoices" : "Will update after sales invoices are generated"}</small>
                             </div>
                             <div>
                               <span>Projected Sales From Purchase</span>

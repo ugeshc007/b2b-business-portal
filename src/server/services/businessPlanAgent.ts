@@ -326,6 +326,13 @@ export async function runBusinessPlanAgent(input: {
   };
 
   try {
+  const managedCustomerFallback = await prisma.company.findMany({
+    where: {
+      managedByCompanyId: input.companyId,
+      active: true,
+      OR: [{ role: "BUYER" }, { role: "BOTH" }],
+    },
+  });
   const purchaseAllocations = allocationRows(plan.purchaseVendors, purchaseAmount).map((allocation) => ({
     ...allocation,
     split: invoicePlan(plan.purchasePlan, allocation.amount),
@@ -381,7 +388,11 @@ export async function runBusinessPlanAgent(input: {
     result.purchase.partners.push({ name: vendor.name, amount: money(allocation.amount).toNumber(), invoices: allocation.split.count });
   }
 
-  const salesPartners = plan.salesAllocations?.length ? plan.salesAllocations : plan.salesCustomers;
+  const salesPartners = plan.salesAllocations?.length
+    ? plan.salesAllocations
+    : plan.salesCustomers?.length
+      ? plan.salesCustomers
+      : managedCustomerFallback.map((company) => ({ name: company.name }));
   const salesAllocations = allocationRows(salesPartners, salesAmount).map((allocation) => ({
     ...allocation,
     split: invoicePlan(plan.salesPlan, allocation.amount),
