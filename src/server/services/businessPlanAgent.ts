@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "../db";
-import { appDate, appMonthEnd, appMonthStart } from "../../shared/timezone";
+import { appMonthEnd, appMonthStart } from "../../shared/timezone";
 import { createMonthlyTarget, logAgentAudit, runTargetWorkflow, vendorCreateInvoiceForTarget } from "./workflow";
 import { itemBuyingPrice, itemSellingPrice } from "./stockLedger";
 
@@ -63,15 +63,27 @@ function allocationRows(partners: PlanPartner[] | undefined, amount: number) {
 }
 
 function scheduleDates(month: string, count: number, dateFrom?: string, dateTo?: string) {
-  const start = new Date(`${dateFrom || appMonthStart(month)}T00:00:00+04:00`);
-  const end = new Date(`${dateTo || appMonthEnd(month)}T00:00:00+04:00`);
+  const start = parseDateParts(dateFrom || appMonthStart(month));
+  const end = parseDateParts(dateTo || appMonthEnd(month));
   const spanDays = Math.max(0, Math.round((end.getTime() - start.getTime()) / 86400000));
   return Array.from({ length: count }, (_, index) => {
     const dayOffset = count <= 1 ? 0 : Math.round((spanDays * index) / Math.max(count - 1, 1));
     const date = new Date(start);
-    date.setDate(start.getDate() + dayOffset);
-    return appDate(date);
+    date.setUTCDate(start.getUTCDate() + dayOffset);
+    return formatDateParts(date);
   });
+}
+
+function parseDateParts(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function formatDateParts(value: Date) {
+  const year = value.getUTCFullYear();
+  const month = String(value.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(value.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 async function findPartnerCompany(mainCompanyId: string, partnerName: string) {
@@ -118,7 +130,7 @@ async function createAllocatedTarget(input: {
   targetDate: string;
   direction: "PURCHASE" | "SALES";
   amount: number;
-  lineCount: number;
+  lineCount?: number;
   notes: string;
 }) {
   const items = await prisma.item.findMany({
@@ -126,7 +138,8 @@ async function createAllocatedTarget(input: {
     orderBy: { sku: "asc" },
   });
   if (!items.length) throw new Error("Product master is empty. Import products before running business plan agent.");
-  const shuffled = [...items].sort(() => Math.random() - 0.5).slice(0, Math.min(input.lineCount, items.length));
+  const decidedLineCount = input.lineCount ?? decideProductLineCount(input.amount, items.length);
+  const shuffled = [...items].sort(() => Math.random() - 0.5).slice(0, Math.min(decidedLineCount, items.length));
   const amountPerLine = input.amount / shuffled.length;
   const lines = shuffled.map((item) => {
     const unitPrice = input.direction === "PURCHASE" ? itemBuyingPrice(item) : itemSellingPrice(item);
@@ -178,6 +191,14 @@ async function createAllocatedTarget(input: {
   });
 }
 
+function decideProductLineCount(amount: number, activeProductCount: number) {
+  if (activeProductCount <= 1) return 1;
+  if (amount >= 100_000) return Math.min(8, activeProductCount);
+  if (amount >= 50_000) return Math.min(6, activeProductCount);
+  if (amount >= 10_000) return Math.min(4, activeProductCount);
+  return Math.min(3, activeProductCount);
+}
+
 async function runAndInvoiceTarget(targetId: string) {
   const workflow = await runTargetWorkflow(targetId);
   const vendorInvoice = await vendorCreateInvoiceForTarget(targetId);
@@ -223,23 +244,34 @@ export async function runBusinessPlanAgent(input: {
     invoiceIds: [] as string[],
   };
 
-  for (const allocation of allocationRows(plan.purchaseVendors, purchaseAmount)) {
+  const purchaseAllocations = allocationRows(plan.purchaseVendors, purchaseAmount).map((allocation) => ({
+    ...allocation,
+    split: invoicePlan(plan.purchasePlan, allocation.amount),
+  }));
+  const purchaseDates = scheduleDates(
+    input.month,
+    purchaseAllocations.reduce((sum, allocation) => sum + allocation.split.count, 0),
+    input.dateFrom,
+    input.dateTo,
+  );
+  let purchaseDateIndex = 0;
+  for (const allocation of purchaseAllocations) {
     const vendor = await findPartnerCompany(input.companyId, allocation.partner.name);
     if (!vendor) throw new Error(`Purchase vendor not found: ${allocation.partner.name}`);
     await ensureSupplierStock(vendor.id, allocation.amount);
-    const split = invoicePlan(plan.purchasePlan, allocation.amount);
-    const dates = scheduleDates(input.month, split.count, input.dateFrom, input.dateTo);
-    for (let index = 0; index < split.count; index += 1) {
-      const amount = Math.min(split.valueLimit, allocation.amount / split.count);
+    for (let index = 0; index < allocation.split.count; index += 1) {
+      const amount = Math.min(allocation.split.valueLimit, allocation.amount / allocation.split.count);
+      const targetDate = purchaseDates[purchaseDateIndex] ?? purchaseDates.at(-1) ?? input.dateFrom ?? appMonthStart(input.month);
+      purchaseDateIndex += 1;
       const target = await createAllocatedTarget({
         buyerCompanyId: input.companyId,
         sellerCompanyId: vendor.id,
         month: input.month,
-        targetDate: dates[index],
+        targetDate,
         direction: "PURCHASE",
         amount,
-        lineCount: input.lineCount ?? 3,
-        notes: `Business plan purchase ${index + 1}/${split.count}: ${allocation.percent.toFixed(2)}% allocation from ${vendor.name}`,
+        lineCount: input.lineCount,
+        notes: `Business plan purchase ${index + 1}/${allocation.split.count}: ${allocation.percent.toFixed(2)}% allocation from ${vendor.name}`,
       });
       const completed = await runAndInvoiceTarget(target.id);
       result.targetIds.push(target.id);
@@ -253,26 +285,37 @@ export async function runBusinessPlanAgent(input: {
         metadata: { allocationAmount: allocation.amount, invoiceId: completed.vendorInvoice.invoice.id },
       });
     }
-    result.purchase.partners.push({ name: vendor.name, amount: money(allocation.amount).toNumber(), invoices: split.count });
+    result.purchase.partners.push({ name: vendor.name, amount: money(allocation.amount).toNumber(), invoices: allocation.split.count });
   }
 
   const salesPartners = plan.salesAllocations?.length ? plan.salesAllocations : plan.salesCustomers;
-  for (const allocation of allocationRows(salesPartners, salesAmount)) {
+  const salesAllocations = allocationRows(salesPartners, salesAmount).map((allocation) => ({
+    ...allocation,
+    split: invoicePlan(plan.salesPlan, allocation.amount),
+  }));
+  const salesDates = scheduleDates(
+    input.month,
+    salesAllocations.reduce((sum, allocation) => sum + allocation.split.count, 0),
+    input.dateFrom,
+    input.dateTo,
+  );
+  let salesDateIndex = 0;
+  for (const allocation of salesAllocations) {
     const customer = await findPartnerCompany(input.companyId, allocation.partner.name);
     if (!customer) throw new Error(`Sales customer not found: ${allocation.partner.name}`);
-    const split = invoicePlan(plan.salesPlan, allocation.amount);
-    const dates = scheduleDates(input.month, split.count, input.dateFrom, input.dateTo);
-    for (let index = 0; index < split.count; index += 1) {
-      const amount = Math.min(split.valueLimit, allocation.amount / split.count);
+    for (let index = 0; index < allocation.split.count; index += 1) {
+      const amount = Math.min(allocation.split.valueLimit, allocation.amount / allocation.split.count);
+      const targetDate = salesDates[salesDateIndex] ?? salesDates.at(-1) ?? input.dateFrom ?? appMonthStart(input.month);
+      salesDateIndex += 1;
       const target = await createAllocatedTarget({
         buyerCompanyId: customer.id,
         sellerCompanyId: input.companyId,
         month: input.month,
-        targetDate: dates[index],
+        targetDate,
         direction: "SALES",
         amount,
-        lineCount: input.lineCount ?? 3,
-        notes: `Business plan sales ${index + 1}/${split.count}: ${allocation.percent.toFixed(2)}% allocation to ${customer.name}`,
+        lineCount: input.lineCount,
+        notes: `Business plan sales ${index + 1}/${allocation.split.count}: ${allocation.percent.toFixed(2)}% allocation to ${customer.name}`,
       });
       const completed = await runAndInvoiceTarget(target.id);
       result.targetIds.push(target.id);
@@ -286,7 +329,7 @@ export async function runBusinessPlanAgent(input: {
         metadata: { allocationAmount: allocation.amount, invoiceId: completed.vendorInvoice.invoice.id },
       });
     }
-    result.sales.partners.push({ name: customer.name, amount: money(allocation.amount).toNumber(), invoices: split.count });
+    result.sales.partners.push({ name: customer.name, amount: money(allocation.amount).toNumber(), invoices: allocation.split.count });
   }
 
   await logAgentAudit({

@@ -27,6 +27,8 @@ export function createApp() {
   app.disable("x-powered-by");
   app.use(helmet({
     contentSecurityPolicy: false,
+    crossOriginOpenerPolicy: false,
+    originAgentCluster: false,
   }));
   app.use(compression());
   app.use(cors({

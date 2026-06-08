@@ -64,7 +64,13 @@ businessPlanImportRouter.post(
       const companyId = typeof req.query.companyId === "string" && req.query.companyId.trim()
         ? req.query.companyId.trim()
         : undefined;
-      res.json(await importBusinessPlanScenario(buffer, { companyId }));
+      const planPeriodDateFrom = typeof req.query.planPeriodDateFrom === "string" && req.query.planPeriodDateFrom.trim()
+        ? req.query.planPeriodDateFrom.trim()
+        : undefined;
+      const planPeriodDateTo = typeof req.query.planPeriodDateTo === "string" && req.query.planPeriodDateTo.trim()
+        ? req.query.planPeriodDateTo.trim()
+        : undefined;
+      res.json(await importBusinessPlanScenario(buffer, { companyId, planPeriodDateFrom, planPeriodDateTo }));
     } catch (error) {
       next(error);
     }

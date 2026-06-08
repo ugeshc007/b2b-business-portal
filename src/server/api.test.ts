@@ -81,6 +81,12 @@ describe("api", () => {
     expect(summary.body.overview.stockByCompany).toEqual([]);
   });
 
+  it("does not send HTTPS-only browser isolation headers on HTTP deployments", async () => {
+    const response = await request(app).get("/api/health").expect(200);
+    expect(response.headers["cross-origin-opener-policy"]).toBeUndefined();
+    expect(response.headers["origin-agent-cluster"]).toBeUndefined();
+  });
+
   it("records request and error logs for admin review", async () => {
     await createUser("admin@example.com", "ChangeMe123!", "Admin");
     const login = await request(app)
@@ -529,18 +535,62 @@ describe("api", () => {
     const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
 
     const imported = await request(app)
-      .post(`/api/business-plan-import/import-scenario?companyId=${existingCompany.id}`)
+      .post(`/api/business-plan-import/import-scenario?companyId=${existingCompany.id}&planPeriodDateFrom=2027-06-01&planPeriodDateTo=2027-06-30`)
       .set("Authorization", `Bearer ${login.body.token}`)
       .set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
       .send(buffer)
       .expect(200);
 
     expect(imported.body.company).toBe("UPDATED");
+    expect(imported.body.planPeriodDateFrom).toBe("2027-06-01");
+    expect(imported.body.planPeriodDateTo).toBe("2027-06-30");
     expect(await prisma.company.count({ where: { managedByCompanyId: null } })).toBe(1);
     expect(await prisma.company.count({ where: { name: "Different Excel Owner LLC" } })).toBe(0);
     expect(await prisma.appSetting.count({ where: { key: `businessPlan:${existingCompany.id}` } })).toBe(1);
-    expect(await prisma.turnoverTarget.count({ where: { companyId: existingCompany.id, type: "PURCHASE" } })).toBe(1);
+    expect(await prisma.turnoverTarget.count({ where: { companyId: existingCompany.id, type: "PURCHASE", month: "2027-06" } })).toBe(1);
     expect(await prisma.company.count({ where: { managedByCompanyId: existingCompany.id } })).toBe(2);
+    const savedPlan = await prisma.appSetting.findUniqueOrThrow({ where: { key: `businessPlan:${existingCompany.id}` } });
+    expect(JSON.parse(savedPlan.value).planPeriodDateFrom).toBe("2027-06-01");
+    expect(JSON.parse(savedPlan.value).planPeriodDateTo).toBe("2027-06-30");
+  });
+
+  it("shows saved business plan under recreated matching company name", async () => {
+    await createUser("admin@example.com", "ChangeMe123!", "Admin");
+    const company = await createCompany({
+      name: "Recreated Workflow Company",
+      legalName: "Recreated Workflow Company LLC",
+      location: "Dubai",
+      email: "recreated-workflow@example.com",
+    });
+    await prisma.appSetting.create({
+      data: {
+        key: "businessPlan:deleted-company-id",
+        value: JSON.stringify({
+          importedAt: new Date().toISOString(),
+          mainCompanyId: "deleted-company-id",
+          excelMainCompanyName: "Recreated Workflow Company",
+          purchaseVendors: [{ name: "Vendor A", allocationPercent: 100 }],
+          salesCustomers: [],
+          salesAllocations: [],
+          purchasePlan: { revenueTargetText: "AED 1000", transactionAmountMin: 1000 },
+          salesPlan: {},
+        }),
+      },
+    });
+    const login = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "admin@example.com", password: "ChangeMe123!" })
+      .expect(200);
+
+    const summary = await request(app)
+      .get("/api/dashboard/summary")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .expect(200);
+
+    const plan = summary.body.businessPlans.find((entry: { planId: string }) => entry.planId === "businessPlan:deleted-company-id");
+    expect(plan.companyId).toBe(company.id);
+    expect(plan.companyName).toBe(company.name);
+    expect(plan.mainCompanyId).toBe(company.id);
   });
 
   it("imports product price rows from the business plan product sheet", async () => {
@@ -1010,6 +1060,152 @@ describe("api", () => {
     expect(result.body.sales.invoices).toBe(1);
     expect(await prisma.stockMovement.count({ where: { companyId: main.id, type: "SALE" } })).toBe(1);
     expect(await prisma.agentAuditLog.count({ where: { step: "BUSINESS_PLAN_STOCK_PREPARED" } })).toBe(1);
+  });
+
+  it("auto-decides product count for business plan invoices", async () => {
+    await createUser("admin@example.com", "ChangeMe123!", "Admin");
+    const main = await createCompany({
+      name: "Plan Auto Products Main",
+      legalName: "Plan Auto Products Main LLC",
+      location: "Dubai",
+      email: "plan-auto-products-main@example.com",
+    });
+    const customer = await createCompany({
+      name: "Plan Auto Products Customer",
+      legalName: "Plan Auto Products Customer LLC",
+      role: "BUYER",
+      managedByCompanyId: main.id,
+      location: "Dubai",
+      email: "plan-auto-products-customer@example.com",
+    });
+    for (let index = 1; index <= 5; index += 1) {
+      await prisma.item.create({
+        data: {
+          sku: `AUTO-PRODUCT-${index}`,
+          name: `Auto Product ${index}`,
+          unit: "code",
+          expectedPrice: 100,
+          buyingPrice: 90,
+          maxPrice: 100,
+          vatRate: 0.05,
+        },
+      });
+    }
+    await prisma.turnoverTarget.create({
+      data: { companyId: main.id, type: "SALES", month: "2026-06", amount: 10000, notes: "Auto product count target" },
+    });
+    await prisma.appSetting.create({
+      data: {
+        key: `businessPlan:${main.id}`,
+        value: JSON.stringify({
+          mainCompanyId: main.id,
+          salesCustomers: [{ name: customer.name, allocationPercent: 100 }],
+          salesAllocations: [{ name: customer.name, allocationPercent: 100 }],
+          salesPlan: { invoiceRuleText: "Per invoice below AED 10000", invoiceCountMin: 1, invoiceCountMax: 1 },
+        }),
+      },
+    });
+    const login = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "admin@example.com", password: "ChangeMe123!" })
+      .expect(200);
+
+    await request(app)
+      .post("/api/workflow/business-plan-agent/run")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .send({
+        companyId: main.id,
+        month: "2026-06",
+        dateFrom: "2026-06-01",
+        dateTo: "2026-06-01",
+      })
+      .expect(201);
+
+    const target = await prisma.monthlyTarget.findFirst({
+      where: { sellerCompanyId: main.id },
+      include: { lines: true },
+    });
+    expect(target?.lines).toHaveLength(4);
+  });
+
+  it("spreads business plan invoices across the selected date range", async () => {
+    await createUser("admin@example.com", "ChangeMe123!", "Admin");
+    const main = await createCompany({
+      name: "Plan Schedule Main",
+      legalName: "Plan Schedule Main LLC",
+      location: "Dubai",
+      email: "plan-schedule-main@example.com",
+    });
+    const customerA = await createCompany({
+      name: "Plan Schedule Customer A",
+      legalName: "Plan Schedule Customer A LLC",
+      role: "BUYER",
+      managedByCompanyId: main.id,
+      location: "Dubai",
+      email: "plan-schedule-a@example.com",
+    });
+    const customerB = await createCompany({
+      name: "Plan Schedule Customer B",
+      legalName: "Plan Schedule Customer B LLC",
+      role: "BUYER",
+      managedByCompanyId: main.id,
+      location: "Dubai",
+      email: "plan-schedule-b@example.com",
+    });
+    await prisma.item.create({
+      data: {
+        sku: "SCHEDULE-A",
+        name: "Schedule Product A",
+        unit: "code",
+        expectedPrice: 100,
+        buyingPrice: 90,
+        maxPrice: 100,
+        vatRate: 0.05,
+      },
+    });
+    await prisma.turnoverTarget.create({
+      data: { companyId: main.id, type: "SALES", month: "2026-06", amount: 400, notes: "Schedule sales target" },
+    });
+    await prisma.appSetting.create({
+      data: {
+        key: `businessPlan:${main.id}`,
+        value: JSON.stringify({
+          mainCompanyId: main.id,
+          salesCustomers: [
+            { name: customerA.name, allocationPercent: 50 },
+            { name: customerB.name, allocationPercent: 50 },
+          ],
+          salesAllocations: [
+            { name: customerA.name, allocationPercent: 50 },
+            { name: customerB.name, allocationPercent: 50 },
+          ],
+          salesPlan: { invoiceRuleText: "Per invoice below AED 100", invoiceCountMin: 2, invoiceCountMax: 2 },
+        }),
+      },
+    });
+    const login = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "admin@example.com", password: "ChangeMe123!" })
+      .expect(200);
+
+    await request(app)
+      .post("/api/workflow/business-plan-agent/run")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .send({
+        companyId: main.id,
+        month: "2026-06",
+        dateFrom: "2026-06-01",
+        dateTo: "2026-06-10",
+        lineCount: 1,
+      })
+      .expect(201);
+
+    const targets = await prisma.monthlyTarget.findMany({
+      where: { sellerCompanyId: main.id },
+      orderBy: { targetDate: "asc" },
+    });
+    expect(targets).toHaveLength(4);
+    expect(new Set(targets.map((target) => target.targetDate))).toEqual(new Set(["2026-06-01", "2026-06-04", "2026-06-07", "2026-06-10"]));
   });
 
   it("blocks deleting a company with transaction history", async () => {

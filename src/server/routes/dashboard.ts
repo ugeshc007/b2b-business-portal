@@ -7,23 +7,39 @@ import { getStockMovementReport } from "../services/stockLedger";
 export const dashboardRouter = Router();
 dashboardRouter.use(requireAuth);
 
-function parseBusinessPlanSetting(setting: { key: string; value: string; updatedAt: Date }, companyName?: string) {
+function normalizeIdentity(value?: string | null) {
+  return (value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function parseBusinessPlanSetting(
+  setting: { key: string; value: string; updatedAt: Date },
+  companies: Array<{ id: string; name: string; legalName: string }>,
+) {
   const [, companyId = setting.key] = setting.key.split(":");
   try {
     const plan = JSON.parse(setting.value);
+    const explicitCompanyId = plan.companyId ?? plan.mainCompanyId ?? companyId;
+    const resolvedCompany = companies.find((company) => company.id === companyId)
+      ?? companies.find((company) => company.id === explicitCompanyId)
+      ?? companies.find((company) => {
+        const planName = normalizeIdentity(plan.excelMainCompanyName ?? plan.companyName);
+        return planName && [company.name, company.legalName].some((value) => normalizeIdentity(value) === planName);
+      });
+    const resolvedCompanyId = resolvedCompany?.id ?? explicitCompanyId;
     return {
+      ...plan,
       planId: setting.key,
-      companyId,
-      companyName: companyName ?? companyId,
+      companyId: resolvedCompanyId,
+      companyName: resolvedCompany?.name ?? plan.companyName ?? plan.excelMainCompanyName ?? resolvedCompanyId,
+      mainCompanyId: resolvedCompanyId,
       updatedAt: setting.updatedAt,
       parseError: null,
-      ...plan,
     };
   } catch (error) {
     return {
       planId: setting.key,
       companyId,
-      companyName: companyName ?? companyId,
+      companyName: companies.find((company) => company.id === companyId)?.name ?? companyId,
       updatedAt: setting.updatedAt,
       parseError: error instanceof Error ? error.message : "Could not parse saved business plan",
     };
@@ -64,11 +80,7 @@ dashboardRouter.get("/summary", async (_req, res, next) => {
         orderBy: { updatedAt: "desc" },
       }),
     ]);
-    const companyNameById = new Map(companies.map((company) => [company.id, company.name]));
-    const businessPlans = businessPlanSettings.map((setting) => {
-      const [, companyId = setting.key] = setting.key.split(":");
-      return parseBusinessPlanSetting(setting, companyNameById.get(companyId));
-    });
+    const businessPlans = businessPlanSettings.map((setting) => parseBusinessPlanSetting(setting, companies));
 
     const invoiceTotal = invoices.reduce((sum, invoice) => sum.plus(invoice.total), new Prisma.Decimal(0));
     const vatTotal = invoices.reduce((sum, invoice) => sum.plus(invoice.vatAmount), new Prisma.Decimal(0));

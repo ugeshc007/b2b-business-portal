@@ -9,6 +9,7 @@ const apiUrl = import.meta.env.VITE_API_URL || defaultApiUrl;
 const portalSlug = window.location.pathname.split("/").filter(Boolean)[0]?.toLowerCase() ?? "";
 const portalCompanyName = ["dealz", "dealzarabia"].includes(portalSlug) ? "Dealzarabia" : portalSlug === "buy2day" ? "Buy2day" : "";
 const isCompanyPortal = Boolean(portalCompanyName);
+const workflowPageSize = 25;
 
 type Company = {
   id: string;
@@ -166,6 +167,8 @@ type SavedBusinessPlan = {
   parseError?: string | null;
   excelMainCompanyName?: string;
   mainCompanyId?: string;
+  planPeriodDateFrom?: string;
+  planPeriodDateTo?: string;
   purchaseVendors?: Array<{ name: string; role?: string; allocationPercent?: number; address?: string; email?: string }>;
   salesCustomers?: Array<{ name: string; role?: string; allocationPercent?: number; address?: string; email?: string; bank?: { bankName?: string; iban?: string; accountNumber?: string } }>;
   salesAllocations?: Array<{ name: string; role?: string; allocationPercent?: number; address?: string; email?: string }>;
@@ -339,6 +342,8 @@ type BusinessPlanProductImportResult = {
 
 type BusinessPlanScenarioImportResult = {
   company: "CREATED" | "UPDATED" | "SKIPPED";
+  planPeriodDateFrom?: string;
+  planPeriodDateTo?: string;
   partnersCreated: number;
   partnersUpdated: number;
   turnoverTargetsCreated: number;
@@ -610,6 +615,8 @@ function App() {
   const [showCreateCompany, setShowCreateCompany] = useState(false);
   const [businessPlanFile, setBusinessPlanFile] = useState<File | null>(null);
   const [businessPlanCompanyId, setBusinessPlanCompanyId] = useState("AUTO");
+  const [businessPlanPeriodFrom, setBusinessPlanPeriodFrom] = useState(() => monthStartInputValue());
+  const [businessPlanPeriodTo, setBusinessPlanPeriodTo] = useState(() => monthEndInputValue());
   const [businessPlanPreview, setBusinessPlanPreview] = useState<BusinessPlanPreview | null>(null);
   const [businessProductImportResult, setBusinessProductImportResult] = useState<BusinessPlanProductImportResult | null>(null);
   const [businessScenarioImportResult, setBusinessScenarioImportResult] = useState<BusinessPlanScenarioImportResult | null>(null);
@@ -695,13 +702,14 @@ function App() {
   const [planAgentMonth, setPlanAgentMonth] = useState(() => appDate().slice(0, 7));
   const [planAgentDateFrom, setPlanAgentDateFrom] = useState(() => monthStartInputValue());
   const [planAgentDateTo, setPlanAgentDateTo] = useState(() => monthEndInputValue());
-  const [planAgentLineCount, setPlanAgentLineCount] = useState("3");
   const [planAgentStatus, setPlanAgentStatus] = useState("");
   const [showBusinessPlanEditor, setShowBusinessPlanEditor] = useState(false);
   const [editingBusinessPlanId, setEditingBusinessPlanId] = useState("");
   const [businessPlanRunStatus, setBusinessPlanRunStatus] = useState<Record<string, "IDLE" | "RUNNING" | "STOPPED" | "COMPLETED" | "FAILED">>({});
   const businessPlanAbortControllers = useRef<Record<string, AbortController>>({});
   const [workflowTab, setWorkflowTab] = useState<"uploaded" | "manual">("uploaded");
+  const [workflowTodayPage, setWorkflowTodayPage] = useState(1);
+  const [workflowOtherPage, setWorkflowOtherPage] = useState(1);
   const [showAdvancedWorkflow, setShowAdvancedWorkflow] = useState(false);
   const [editingTargetId, setEditingTargetId] = useState("");
   const [selectedInvoiceId, setSelectedInvoiceId] = useState("");
@@ -933,6 +941,8 @@ function App() {
   useEffect(() => {
     setShowBusinessPlanEditor(false);
     setEditingBusinessPlanId("");
+    setWorkflowTodayPage(1);
+    setWorkflowOtherPage(1);
   }, [planAgentCompanyId]);
 
   async function handleLogin(event: React.FormEvent) {
@@ -1265,8 +1275,11 @@ function App() {
         setBusinessImportProgress(65);
         setLoading(true);
         try {
+          if (businessPlanPeriodFrom && businessPlanPeriodTo && businessPlanPeriodFrom > businessPlanPeriodTo) throw new Error("Business plan period Date From cannot be after Date To.");
           const importUrl = new URL(`${apiUrl}/api/business-plan-import/import-scenario`);
           if (businessPlanCompanyId !== "AUTO") importUrl.searchParams.set("companyId", businessPlanCompanyId);
+          if (businessPlanPeriodFrom) importUrl.searchParams.set("planPeriodDateFrom", businessPlanPeriodFrom);
+          if (businessPlanPeriodTo) importUrl.searchParams.set("planPeriodDateTo", businessPlanPeriodTo);
           const response = await fetch(importUrl.toString(), {
             method: "POST",
             headers: {
@@ -1860,9 +1873,8 @@ function App() {
             body: JSON.stringify({
               companyId: planAgentCompanyId,
               month: planAgentMonth,
-              dateFrom: planAgentDateFrom || undefined,
-              dateTo: planAgentDateTo || undefined,
-              lineCount: Number(planAgentLineCount),
+              dateFrom: selectedWorkflowBusinessPlan?.planPeriodDateFrom || planAgentDateFrom || undefined,
+              dateTo: selectedWorkflowBusinessPlan?.planPeriodDateTo || planAgentDateTo || undefined,
             }),
           });
           const status = `Completed ${result.purchase.invoices} purchase invoices and ${result.sales.invoices} sales invoices.`;
@@ -1921,9 +1933,8 @@ function App() {
           companyId: plan.companyId,
           planId: plan.planId,
           month: planAgentMonth,
-          dateFrom: planAgentDateFrom || undefined,
-          dateTo: planAgentDateTo || undefined,
-          lineCount: Number(planAgentLineCount),
+          dateFrom: plan.planPeriodDateFrom || planAgentDateFrom || undefined,
+          dateTo: plan.planPeriodDateTo || planAgentDateTo || undefined,
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -1960,6 +1971,12 @@ function App() {
     setPlanStockCompanyId(companyId);
     setInvoiceCompanyId(companyId);
     setEmailCompanyId(companyId);
+  }
+
+  function openWorkflowBusinessPlanImport() {
+    if (workflowSelectedCompanyId) setBusinessPlanCompanyId(workflowSelectedCompanyId);
+    setSettingsTab("businessImport");
+    setActiveView("settings");
   }
 
   function parseBusinessPlanPartnerText(text: string, role: "BUYER" | "SELLER") {
@@ -2680,6 +2697,12 @@ function App() {
     : scopedTargets;
   const workflowTodayTargets = workflowScopedTargets.filter((target) => target.targetDate === todayDate);
   const workflowOtherTargets = workflowScopedTargets.filter((target) => target.targetDate !== todayDate);
+  const workflowTodayTotalPages = Math.max(1, Math.ceil(workflowTodayTargets.length / workflowPageSize));
+  const workflowOtherTotalPages = Math.max(1, Math.ceil(workflowOtherTargets.length / workflowPageSize));
+  const workflowTodayCurrentPage = Math.min(workflowTodayPage, workflowTodayTotalPages);
+  const workflowOtherCurrentPage = Math.min(workflowOtherPage, workflowOtherTotalPages);
+  const pagedWorkflowTodayTargets = workflowTodayTargets.slice((workflowTodayCurrentPage - 1) * workflowPageSize, workflowTodayCurrentPage * workflowPageSize);
+  const pagedWorkflowOtherTargets = workflowOtherTargets.slice((workflowOtherCurrentPage - 1) * workflowPageSize, workflowOtherCurrentPage * workflowPageSize);
   const rawWorkflowBusinessPlans = (summary?.businessPlans ?? []).filter((plan) => plan.companyId === workflowSelectedCompanyId);
   const appendedWorkflowBusinessPlans = rawWorkflowBusinessPlans.filter((plan) => plan.planId.split(":").length > 2);
   const selectedWorkflowBusinessPlans = appendedWorkflowBusinessPlans.length ? appendedWorkflowBusinessPlans : rawWorkflowBusinessPlans;
@@ -3321,6 +3344,14 @@ function App() {
                     </select>
                   </label>
                   <label>
+                    Plan Period From
+                    <input type="date" value={businessPlanPeriodFrom} onChange={(event) => setBusinessPlanPeriodFrom(event.target.value)} />
+                  </label>
+                  <label>
+                    Plan Period To
+                    <input type="date" value={businessPlanPeriodTo} onChange={(event) => setBusinessPlanPeriodTo(event.target.value)} />
+                  </label>
+                  <label>
                     Excel Business Plan File
                     <input
                       type="file"
@@ -3377,6 +3408,7 @@ function App() {
                           ? `${selectedBusinessPlanCompany.name} (existing company)`
                           : "Auto-detect from Excel"}
                       </span>
+                      <span>Plan period: {businessPlanPeriodFrom || "open"} to {businessPlanPeriodTo || "open"}</span>
                       <span>Sheets: {businessPlanPreview.workbook.sheetNames.join(", ")}</span>
                       <span>{businessPlanPreview.nextStep}</span>
                     </div>
@@ -3414,6 +3446,7 @@ function App() {
                       <div className="config-status ready">
                         <strong>Business Plan Import Complete</strong>
                         <span>Main company: {businessScenarioImportResult.company}</span>
+                        <span>Plan period: {businessScenarioImportResult.planPeriodDateFrom || "open"} to {businessScenarioImportResult.planPeriodDateTo || "open"}</span>
                         <span>Partners: {businessScenarioImportResult.partnersCreated} created, {businessScenarioImportResult.partnersUpdated} updated.</span>
                         <span>Targets: {businessScenarioImportResult.turnoverTargetsCreated} created, {businessScenarioImportResult.turnoverTargetsUpdated} updated. Rules saved: {businessScenarioImportResult.rulesSaved}.</span>
                       </div>
@@ -4363,8 +4396,8 @@ function App() {
                 <input type="date" value={planAgentDateTo} onChange={(event) => setPlanAgentDateTo(event.target.value)} />
               </label>
               <label>
-                Random Products Per Invoice
-                <input type="number" min="1" max="20" step="1" value={planAgentLineCount} onChange={(event) => setPlanAgentLineCount(event.target.value)} />
+                Products Per Invoice
+                <input value="Auto selected by system" disabled readOnly />
               </label>
               {planAgentStatus && <div className="local-success stock-local-message">{planAgentStatus}</div>}
             </form>
@@ -4372,6 +4405,9 @@ function App() {
               <div className="table-section-title">
                 <strong>Uploaded Business Plans</strong>
                 <span>{workflowSelectedCompany ? `${workflowSelectedCompany.name}: ` : ""}{selectedWorkflowBusinessPlans.length ? `${selectedWorkflowBusinessPlans.length} plan${selectedWorkflowBusinessPlans.length === 1 ? "" : "s"} uploaded` : "Select a company with imported plans"}</span>
+                <button type="button" className="secondary-button" onClick={openWorkflowBusinessPlanImport}>
+                  <Plus size={16} /> Upload Business Plan
+                </button>
               </div>
               {!workflowSelectedCompanyId && <div className="empty-state">Select a Business Plan Company to view the uploaded plan.</div>}
               {workflowSelectedCompanyId && !selectedWorkflowBusinessPlans.length && (
@@ -4412,7 +4448,7 @@ function App() {
                             <Metric label="Transaction %" value={plan.purchasePlan?.transactionPercent === undefined ? "-" : percent(plan.purchasePlan.transactionPercent)} />
                             <Metric label="Vendors" value={plan.purchaseVendors?.length ?? 0} />
                             <Metric label="Customers" value={plan.salesCustomers?.length ?? 0} />
-                            <Metric label="Plan ID" value={plan.planId.split(":").at(-1) ?? plan.planId} />
+                            <Metric label="Plan Period" value={plan.planPeriodDateFrom || plan.planPeriodDateTo ? `${plan.planPeriodDateFrom || "open"} to ${plan.planPeriodDateTo || "open"}` : "-"} />
                           </div>
                           {isEditingPlan && (
                             <form className="business-plan-edit-form" key={`edit-${plan.planId}-${planAgentMonth}`} onSubmit={saveBusinessPlanEdits}>
@@ -4730,10 +4766,16 @@ function App() {
               <>
             <div className="table-section-title">
               <strong>Today's Targets</strong>
-              <span>{workflowSelectedCompany ? `${workflowSelectedCompany.name} - ` : ""}{todayDate}</span>
+              <span>{workflowSelectedCompany ? `${workflowSelectedCompany.name} - ` : ""}{todayDate} - {workflowTodayTargets.length} total</span>
             </div>
+            <PaginationControls
+              page={workflowTodayCurrentPage}
+              totalPages={workflowTodayTotalPages}
+              totalRows={workflowTodayTargets.length}
+              onPageChange={setWorkflowTodayPage}
+            />
             <div className="table">
-              {workflowTodayTargets.map((target) => (
+              {pagedWorkflowTodayTargets.map((target) => (
                 <div className="row workflow-row" key={target.id}>
                   <span>{target.periodType === "DAILY" ? `${target.targetDate ?? target.dateFrom} ${target.hourFrom ?? ""}-${target.hourTo ?? ""}` : `${target.month} ${target.dateFrom ?? ""}-${target.dateTo ?? ""}`}</span>
                   <span>{target.buyerCompany.name} to {target.sellerCompany.name}</span>
@@ -4756,8 +4798,14 @@ function App() {
               <strong>Other Workflow Targets</strong>
               <span>{workflowSelectedCompany ? `${workflowSelectedCompany.name}: ` : ""}{workflowOtherTargets.length} total</span>
             </div>
+            <PaginationControls
+              page={workflowOtherCurrentPage}
+              totalPages={workflowOtherTotalPages}
+              totalRows={workflowOtherTargets.length}
+              onPageChange={setWorkflowOtherPage}
+            />
             <div className="table">
-              {workflowOtherTargets.map((target) => (
+              {pagedWorkflowOtherTargets.map((target) => (
                 <div className="row workflow-row" key={target.id}>
                   <span>{target.periodType === "DAILY" ? `${target.targetDate ?? target.dateFrom} ${target.hourFrom ?? ""}-${target.hourTo ?? ""}` : `${target.month} ${target.dateFrom ?? ""}-${target.dateTo ?? ""}`}</span>
                   <span>{target.buyerCompany.name} to {target.sellerCompany.name}</span>
@@ -4970,6 +5018,32 @@ function Metric({ label, value }: { label: string; value: string | number }) {
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return <section className="panel"><h2>{title}</h2>{children}</section>;
+}
+
+function PaginationControls({
+  page,
+  totalPages,
+  totalRows,
+  onPageChange,
+}: {
+  page: number;
+  totalPages: number;
+  totalRows: number;
+  onPageChange: (page: number) => void;
+}) {
+  if (totalRows <= workflowPageSize) return null;
+  const start = (page - 1) * workflowPageSize + 1;
+  const end = Math.min(totalRows, page * workflowPageSize);
+  return (
+    <div className="pagination-controls">
+      <span>{start}-{end} of {totalRows}</span>
+      <button type="button" className="secondary-button" disabled={page <= 1} onClick={() => onPageChange(1)}>First</button>
+      <button type="button" className="secondary-button" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>Previous</button>
+      <strong>Page {page} / {totalPages}</strong>
+      <button type="button" className="secondary-button" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>Next</button>
+      <button type="button" className="secondary-button" disabled={page >= totalPages} onClick={() => onPageChange(totalPages)}>Last</button>
+    </div>
+  );
 }
 
 function ReportTable({

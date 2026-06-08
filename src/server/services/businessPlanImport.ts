@@ -131,6 +131,8 @@ export type BusinessPlanProductImportResult = {
 
 export type BusinessPlanScenarioImportResult = {
   company: "CREATED" | "UPDATED" | "SKIPPED";
+  planPeriodDateFrom?: string;
+  planPeriodDateTo?: string;
   partnersCreated: number;
   partnersUpdated: number;
   turnoverTargetsCreated: number;
@@ -146,6 +148,12 @@ export type BusinessPlanScenarioImportResult = {
 
 function cleanText(value: unknown) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function dateText(value: string | undefined) {
+  if (!value) return undefined;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error("Business plan period date must be YYYY-MM-DD");
+  return value;
 }
 
 function cleanMultilineText(value: unknown) {
@@ -823,12 +831,17 @@ export async function importBusinessPlanProducts(buffer: Buffer): Promise<Busine
   return result;
 }
 
-export async function importBusinessPlanScenario(buffer: Buffer, options: { companyId?: string } = {}): Promise<BusinessPlanScenarioImportResult> {
+export async function importBusinessPlanScenario(buffer: Buffer, options: { companyId?: string; planPeriodDateFrom?: string; planPeriodDateTo?: string } = {}): Promise<BusinessPlanScenarioImportResult> {
   const preview = parseBusinessPlanWorkbook(buffer);
   if (!preview.scenario?.mainCompany?.name) throw new Error("Business plan main company was not detected. Preview the file and check the Company Name column.");
+  const planPeriodDateFrom = dateText(options.planPeriodDateFrom);
+  const planPeriodDateTo = dateText(options.planPeriodDateTo);
+  if (planPeriodDateFrom && planPeriodDateTo && planPeriodDateFrom > planPeriodDateTo) throw new Error("Business plan period Date From cannot be after Date To");
 
   const result: BusinessPlanScenarioImportResult = {
     company: "SKIPPED",
+    planPeriodDateFrom,
+    planPeriodDateTo,
     partnersCreated: 0,
     partnersUpdated: 0,
     turnoverTargetsCreated: 0,
@@ -891,7 +904,7 @@ export async function importBusinessPlanScenario(buffer: Buffer, options: { comp
     });
   }
 
-  const month = new Date().toISOString().slice(0, 7);
+  const month = (planPeriodDateFrom ?? new Date().toISOString().slice(0, 10)).slice(0, 7);
   const targets = [
     { type: "PURCHASE", plan: preview.scenario.purchasePlan },
     { type: "SALES", plan: preview.scenario.salesPlan },
@@ -938,6 +951,8 @@ export async function importBusinessPlanScenario(buffer: Buffer, options: { comp
     importedAt,
     mainCompanyId: mainCompany.id,
     excelMainCompanyName: main.name,
+    planPeriodDateFrom,
+    planPeriodDateTo,
     purchaseVendors: preview.scenario.purchaseVendors,
     salesCustomers: preview.scenario.salesCustomers,
     salesAllocations: preview.scenario.salesAllocations,
@@ -967,7 +982,14 @@ export async function importBusinessPlanScenario(buffer: Buffer, options: { comp
     },
   });
   result.rulesSaved = 1;
-  result.rows.push({ type: "BUSINESS_RULE", name: "Allocation and invoice rules", status: "SAVED", detail: "Saved under app settings for agent planning." });
+  result.rows.push({
+    type: "BUSINESS_RULE",
+    name: "Allocation and invoice rules",
+    status: "SAVED",
+    detail: planPeriodDateFrom || planPeriodDateTo
+      ? `Saved under app settings for ${planPeriodDateFrom ?? "open"} to ${planPeriodDateTo ?? "open"}.`
+      : "Saved under app settings for agent planning.",
+  });
 
   return result;
 }
