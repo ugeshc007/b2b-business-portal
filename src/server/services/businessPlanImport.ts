@@ -689,6 +689,7 @@ export function parseBusinessPlanWorkbook(buffer: Buffer): BusinessPlanImportPre
     bank: findBankForPartner(partner.name, partnerBanks),
   }));
   const salesAllocations = parseAllocationList(salesPlan?.vendorRule, "BUYER");
+  const salesCustomerCount = new Set([...salesCustomers, ...salesAllocations].map((customer) => normalizeIdentity(customer.name)).filter(Boolean)).size;
   const scenario = mainCompany ? {
     mainCompany,
     purchasePlan,
@@ -757,7 +758,7 @@ export function parseBusinessPlanWorkbook(buffer: Buffer): BusinessPlanImportPre
     counts: {
       companies: companies.length,
       purchaseVendors: purchaseVendors.length,
-      salesCustomers: salesCustomers.length,
+      salesCustomers: salesCustomerCount,
       products: products.length,
       bankStatusRows: bankStatusRows.length,
       warnings: warnings.length,

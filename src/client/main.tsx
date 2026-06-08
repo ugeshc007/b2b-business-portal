@@ -486,6 +486,26 @@ function businessPlanPartnerLines(
   }).join("\n");
 }
 
+function businessPlanCustomers(plan: SavedBusinessPlan) {
+  type PlanCustomer = { name: string; role?: string; allocationPercent?: number; address?: string; email?: string; bank?: { bankName?: string; iban?: string; accountNumber?: string } };
+  const customers = new Map<string, PlanCustomer>();
+  for (const customer of [...(plan.salesCustomers ?? []), ...(plan.salesAllocations ?? [])]) {
+    const key = normalizedBusinessName(customer.name);
+    if (!key) continue;
+    const existing = customers.get(key);
+    const customerBank = "bank" in customer ? (customer.bank as PlanCustomer["bank"]) : undefined;
+    customers.set(key, {
+      ...existing,
+      ...customer,
+      allocationPercent: customer.allocationPercent ?? existing?.allocationPercent,
+      email: customer.email ?? existing?.email,
+      address: customer.address ?? existing?.address,
+      bank: customerBank ?? existing?.bank,
+    });
+  }
+  return [...customers.values()];
+}
+
 function roleLabel(role?: Company["role"]) {
   if (role === "BUYER") return "Customer";
   if (role === "SELLER") return "Vendor";
@@ -4675,6 +4695,7 @@ function App() {
                   const isEditingPlan = showBusinessPlanEditor && editingBusinessPlanId === plan.planId;
                   const isExpandedPlan = expandedWorkflowPlanIds.includes(plan.planId) || isEditingPlan;
                   const salesSummary = businessPlanSalesSummary(plan, summary?.targets ?? [], summary?.turnoverTargets ?? [], summary?.items ?? []);
+                  const mergedCustomers = businessPlanCustomers(plan);
                   return (
                     <article className="workflow-plan-item" key={plan.planId}>
                       <div className="workflow-plan-item-head">
@@ -4713,7 +4734,7 @@ function App() {
                             <Metric label="Purchase Target" value={plan.purchasePlan?.transactionAmountMin === undefined ? "-" : money(plan.purchasePlan.transactionAmountMin)} />
                             <Metric label="Transaction %" value={plan.purchasePlan?.transactionPercent === undefined ? "-" : percent(plan.purchasePlan.transactionPercent)} />
                             <Metric label="Vendors" value={plan.purchaseVendors?.length ?? 0} />
-                            <Metric label="Customers" value={plan.salesCustomers?.length ?? 0} />
+                            <Metric label="Customers" value={mergedCustomers.length} />
                             <Metric label="Plan Period" value={plan.planPeriodDateFrom || plan.planPeriodDateTo ? `${plan.planPeriodDateFrom || "open"} to ${plan.planPeriodDateTo || "open"}` : "-"} />
                           </div>
                           <div className="workflow-plan-sales-summary">
@@ -4785,7 +4806,7 @@ function App() {
                               </label>
                               <label className="business-plan-edit-lines">
                                 Sales Customers
-                                <textarea name="salesCustomers" defaultValue={businessPlanPartnerLines(plan.salesCustomers, plan.salesAllocations)} />
+                                <textarea name="salesCustomers" defaultValue={businessPlanPartnerLines(mergedCustomers, plan.salesAllocations)} />
                                 <small>One per line: Customer Name | Allocation % | Email | Address</small>
                               </label>
                               <div className="company-card-actions">
@@ -4799,7 +4820,7 @@ function App() {
                             <div className="row"><span>Purchase Plan</span><span>{plan.purchasePlan?.revenueTargetText || "Revenue target not set"}</span><span>{plan.purchasePlan?.transactionAmountMin === undefined ? "-" : `${money(plan.purchasePlan.transactionAmountMin)}${plan.purchasePlan.transactionPercent ? ` (${percent(plan.purchasePlan.transactionPercent)} of revenue)` : ""}`}</span><span>{plan.purchasePlan?.invoiceRuleText || "Invoice rule not set"}</span></div>
                             <div className="row"><span>Sales Plan</span><span>{plan.salesPlan?.priceRule || plan.salesPlan?.productSpecification || "Sales rule not set"}</span><span>{plan.salesPlan?.invoiceRuleText || "-"}</span><span>{plan.salesPlan?.productSpecification || "-"}</span></div>
                             {(plan.purchaseVendors ?? []).map((vendor) => <div className="row" key={`${plan.planId}-vendor-${vendor.name}`}><span>Vendor</span><span>{vendor.name}</span><span>{vendor.allocationPercent === undefined ? "Auto allocation" : `${percent(vendor.allocationPercent)} purchase`}</span><span>{vendor.email || vendor.address || "Contact can be added later"}</span></div>)}
-                            {(plan.salesCustomers ?? []).map((customer) => {
+                            {mergedCustomers.map((customer) => {
                               const allocation = plan.salesAllocations?.find((entry) => entry.name.toLowerCase() === customer.name.toLowerCase());
                               return <div className="row" key={`${plan.planId}-customer-${customer.name}`}><span>Customer</span><span>{customer.name}</span><span>{allocation?.allocationPercent === undefined ? "Auto allocation" : `${percent(allocation.allocationPercent)} sales`}</span><span>{customer.email || customer.address || customer.bank?.bankName || "Contact can be added later"}</span></div>;
                             })}
