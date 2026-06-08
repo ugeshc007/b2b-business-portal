@@ -659,6 +659,29 @@ function businessPlanSalesSummary(plan: SavedBusinessPlan, targets: Target[], tu
   };
 }
 
+function businessPlanCustomerAllocationRows(
+  customers: ReturnType<typeof businessPlanCustomers>,
+  salesSummary: ReturnType<typeof businessPlanSalesSummary>
+) {
+  if (!customers.length) return [];
+  const explicitTotal = customers.reduce((sum, customer) => sum + (customer.allocationPercent ?? 0), 0);
+  const fallbackPercent = explicitTotal > 0 ? 0 : 100 / customers.length;
+  return customers.map((customer) => {
+    const percentValue = customer.allocationPercent ?? fallbackPercent;
+    const normalizedPercent = explicitTotal > 0 ? percentValue / explicitTotal : percentValue / 100;
+    const allocationValue = salesSummary.projectedSalesFromPurchase * normalizedPercent;
+    const invoiceCount = salesSummary.invoiceLimit && allocationValue > 0
+      ? Math.max(1, Math.ceil(allocationValue / salesSummary.invoiceLimit))
+      : undefined;
+    return {
+      customer,
+      percentValue,
+      allocationValue,
+      invoiceCount,
+    };
+  });
+}
+
 function dateInputValue(date = new Date()) {
   return appDate(date);
 }
@@ -4712,6 +4735,7 @@ function App() {
                   const isExpandedPlan = expandedWorkflowPlanIds.includes(plan.planId) || isEditingPlan;
                   const salesSummary = businessPlanSalesSummary(plan, summary?.targets ?? [], summary?.turnoverTargets ?? [], summary?.items ?? []);
                   const mergedCustomers = businessPlanCustomers(plan, summary?.companies ?? []);
+                  const customerAllocationRows = businessPlanCustomerAllocationRows(mergedCustomers, salesSummary);
                   return (
                     <article className="workflow-plan-item" key={plan.planId}>
                       <div className="workflow-plan-item-head">
@@ -4836,9 +4860,18 @@ function App() {
                             <div className="row"><span>Purchase Plan</span><span>{plan.purchasePlan?.revenueTargetText || "Revenue target not set"}</span><span>{plan.purchasePlan?.transactionAmountMin === undefined ? "-" : `${money(plan.purchasePlan.transactionAmountMin)}${plan.purchasePlan.transactionPercent ? ` (${percent(plan.purchasePlan.transactionPercent)} of revenue)` : ""}`}</span><span>{plan.purchasePlan?.invoiceRuleText || "Invoice rule not set"}</span></div>
                             <div className="row"><span>Sales Plan</span><span>{plan.salesPlan?.priceRule || plan.salesPlan?.productSpecification || "Sales rule not set"}</span><span>{plan.salesPlan?.invoiceRuleText || "-"}</span><span>{plan.salesPlan?.productSpecification || "-"}</span></div>
                             {(plan.purchaseVendors ?? []).map((vendor) => <div className="row" key={`${plan.planId}-vendor-${vendor.name}`}><span>Vendor</span><span>{vendor.name}</span><span>{vendor.allocationPercent === undefined ? "Auto allocation" : `${percent(vendor.allocationPercent)} purchase`}</span><span>{vendor.email || vendor.address || "Contact can be added later"}</span></div>)}
-                            {mergedCustomers.map((customer) => {
-                              const allocation = plan.salesAllocations?.find((entry) => entry.name.toLowerCase() === customer.name.toLowerCase());
-                              return <div className="row" key={`${plan.planId}-customer-${customer.name}`}><span>Customer</span><span>{customer.name}</span><span>{allocation?.allocationPercent === undefined ? "Auto allocation" : `${percent(allocation.allocationPercent)} sales`}</span><span>{customer.email || customer.address || customer.bank?.bankName || "Contact can be added later"}</span></div>;
+                            {customerAllocationRows.map(({ customer, percentValue, allocationValue, invoiceCount }) => {
+                              const invoiceText = invoiceCount === undefined
+                                ? "invoice count pending"
+                                : `${invoiceCount} invoice${invoiceCount === 1 ? "" : "s"}`;
+                              return (
+                                <div className="row" key={`${plan.planId}-customer-${customer.name}`}>
+                                  <span>Customer</span>
+                                  <span>{customer.name}</span>
+                                  <span>{percent(percentValue)} sales = {money(allocationValue)}; {invoiceText}</span>
+                                  <span>{customer.email || customer.address || customer.bank?.bankName || "Contact can be added later"}</span>
+                                </div>
+                              );
                             })}
                           </div>
                         </>
