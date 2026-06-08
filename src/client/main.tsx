@@ -2259,8 +2259,24 @@ function App() {
     const salesInvoiceRuleText = String(form.get("salesInvoiceRuleText") ?? "").trim();
     const planPeriodDateFrom = String(form.get("planPeriodDateFrom") ?? "").trim();
     const planPeriodDateTo = String(form.get("planPeriodDateTo") ?? "").trim();
-    const purchaseVendors = parseBusinessPlanPartnerText(String(form.get("purchaseVendors") ?? ""), "SELLER");
-    const salesCustomers = parseBusinessPlanPartnerText(String(form.get("salesCustomers") ?? ""), "BUYER");
+    const rowPartners = (prefix: string, role: "BUYER" | "SELLER") => {
+      const names = form.getAll(`${prefix}Name`).map((value) => String(value ?? "").trim());
+      const allocations = form.getAll(`${prefix}Allocation`).map((value) => String(value ?? "").trim());
+      const emails = form.getAll(`${prefix}Email`).map((value) => String(value ?? "").trim());
+      const addresses = form.getAll(`${prefix}Address`).map((value) => String(value ?? "").trim());
+      return names.map((name, index) => {
+        const allocationPercent = Number(allocations[index] || "");
+        return {
+          name,
+          role,
+          allocationPercent: Number.isFinite(allocationPercent) ? allocationPercent : undefined,
+          email: emails[index] || undefined,
+          address: addresses[index] || undefined,
+        };
+      }).filter((partner) => partner.name);
+    };
+    const purchaseVendors = rowPartners("vendor", "SELLER");
+    const salesCustomers = rowPartners("customer", "BUYER");
     const salesAllocations = salesCustomers.map(({ name, allocationPercent, email, address }) => ({
       name,
       role: "BUYER",
@@ -4839,16 +4855,40 @@ function App() {
                                 Sales Invoice Rule
                                 <input name="salesInvoiceRuleText" defaultValue={plan.salesPlan?.invoiceRuleText ?? ""} />
                               </label>
-                              <label className="business-plan-edit-lines">
-                                Purchase Vendors
-                                <textarea name="purchaseVendors" defaultValue={businessPlanPartnerLines(plan.purchaseVendors)} />
-                                <small>One per line: Vendor Name | Allocation % | Email | Address</small>
-                              </label>
-                              <label className="business-plan-edit-lines">
-                                Sales Customers
-                                <textarea name="salesCustomers" defaultValue={businessPlanPartnerLines(mergedCustomers, plan.salesAllocations)} />
-                                <small>One per line: Customer Name | Allocation % | Email | Address</small>
-                              </label>
+                              <section className="business-plan-party-editor">
+                                <div className="party-editor-head">
+                                  <strong>Purchase Vendors</strong>
+                                  <small>Edit the exact vendor split used for purchase POs.</small>
+                                </div>
+                                <div className="party-editor-grid party-editor-header">
+                                  <span>Name</span><span>Allocation %</span><span>Email</span><span>Address</span>
+                                </div>
+                                {(plan.purchaseVendors ?? []).map((vendor, rowIndex) => (
+                                  <div className="party-editor-grid" key={`${plan.planId}-edit-vendor-${vendor.name}-${rowIndex}`}>
+                                    <input name="vendorName" defaultValue={vendor.name} />
+                                    <input name="vendorAllocation" type="number" min="0" max="100" step="0.01" defaultValue={vendor.allocationPercent ?? ""} />
+                                    <input name="vendorEmail" defaultValue={vendor.email ?? ""} />
+                                    <input name="vendorAddress" defaultValue={vendor.address ?? ""} />
+                                  </div>
+                                ))}
+                              </section>
+                              <section className="business-plan-party-editor">
+                                <div className="party-editor-head">
+                                  <strong>Sales Customers</strong>
+                                  <small>Edit the exact customer split used for sales invoices.</small>
+                                </div>
+                                <div className="party-editor-grid party-editor-header">
+                                  <span>Name</span><span>Allocation %</span><span>Email</span><span>Address</span>
+                                </div>
+                                {mergedCustomers.map((customer, rowIndex) => (
+                                  <div className="party-editor-grid" key={`${plan.planId}-edit-customer-${customer.name}-${rowIndex}`}>
+                                    <input name="customerName" defaultValue={customer.name} />
+                                    <input name="customerAllocation" type="number" min="0" max="100" step="0.01" defaultValue={customer.allocationPercent ?? ""} />
+                                    <input name="customerEmail" defaultValue={customer.email ?? ""} />
+                                    <input name="customerAddress" defaultValue={customer.address ?? ""} />
+                                  </div>
+                                ))}
+                              </section>
                               <div className="company-card-actions">
                                 <button type="submit" disabled={loading}><Save size={17} /> Save Modified Plan</button>
                                 <button type="button" className="secondary-button" disabled={loading} onClick={() => setShowBusinessPlanEditor(false)}>Cancel</button>

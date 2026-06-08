@@ -1289,16 +1289,37 @@ nav .nav-button.active {
   margin-top: 0;
 }
 
-.business-plan-edit-lines {
-  grid-column: span 2;
+.business-plan-party-editor {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #dbe5df;
+  border-radius: 8px;
+  background: #ffffff;
 }
 
-.business-plan-edit-lines textarea {
-  min-height: 110px;
+.party-editor-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.business-plan-edit-lines small {
+.party-editor-head small {
   color: #66756a;
+}
+
+.party-editor-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.3fr) minmax(110px, 0.45fr) minmax(220px, 1fr) minmax(260px, 1.2fr);
+  gap: 8px;
+}
+
+.party-editor-header {
+  color: #53645a;
+  font-size: 0.84rem;
+  font-weight: 700;
 }
 
 .business-plan-edit-form .company-card-actions {
@@ -2023,7 +2044,8 @@ nav .nav-button.active {
     .workflow-plan-summary,
     .workflow-plan-sales-summary,
     .business-plan-edit-form,
-    .business-plan-edit-lines,
+    .business-plan-party-editor,
+    .party-editor-grid,
     .agent-progress-steps,
     .workflow-planner-form,
     .product-picker,
