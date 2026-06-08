@@ -31,8 +31,8 @@ function parseBusinessPlanSetting(
     const resolvedCompany = companies.find((company) => company.id === companyId)
       ?? companies.find((company) => company.id === explicitCompanyId)
       ?? companies.find((company) => {
-        const planName = plan.excelMainCompanyName ?? plan.companyName;
-        return [company.name, company.legalName].some((value) => identityMatches(value, planName));
+        const planNames = [plan.excelMainCompanyName, plan.companyName].filter(Boolean);
+        return [company.name, company.legalName].some((value) => planNames.some((planName) => identityMatches(value, planName)));
       });
     const resolvedCompanyId = resolvedCompany?.id ?? explicitCompanyId;
     return {

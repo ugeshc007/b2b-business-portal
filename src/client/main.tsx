@@ -508,6 +508,22 @@ function isPartnerForCompany(company: Company, ownerCompanyId: string) {
   return company.id === ownerCompanyId || company.managedByCompanyId === ownerCompanyId;
 }
 
+function normalizedBusinessName(value?: string | null) {
+  return (value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function businessPlanBelongsToCompany(plan: SavedBusinessPlan, company?: Company) {
+  if (!company) return false;
+  if (plan.companyId === company.id || plan.mainCompanyId === company.id) return true;
+  const planNames = [plan.companyName, plan.excelMainCompanyName]
+    .map(normalizedBusinessName)
+    .filter(Boolean);
+  const companyNames = [company.name, company.legalName]
+    .map(normalizedBusinessName)
+    .filter(Boolean);
+  return planNames.some((planName) => companyNames.some((companyName) => planName === companyName || planName.includes(companyName) || companyName.includes(planName)));
+}
+
 function dateInputValue(date = new Date()) {
   return appDate(date);
 }
@@ -2708,7 +2724,7 @@ function App() {
   const workflowOtherCurrentPage = Math.min(workflowOtherPage, workflowOtherTotalPages);
   const pagedWorkflowTodayTargets = workflowTodayTargets.slice((workflowTodayCurrentPage - 1) * workflowPageSize, workflowTodayCurrentPage * workflowPageSize);
   const pagedWorkflowOtherTargets = workflowOtherTargets.slice((workflowOtherCurrentPage - 1) * workflowPageSize, workflowOtherCurrentPage * workflowPageSize);
-  const rawWorkflowBusinessPlans = (summary?.businessPlans ?? []).filter((plan) => plan.companyId === workflowSelectedCompanyId);
+  const rawWorkflowBusinessPlans = (summary?.businessPlans ?? []).filter((plan) => businessPlanBelongsToCompany(plan, workflowSelectedCompany));
   const appendedWorkflowBusinessPlans = rawWorkflowBusinessPlans.filter((plan) => plan.planId.split(":").length > 2);
   const selectedWorkflowBusinessPlans = appendedWorkflowBusinessPlans.length ? appendedWorkflowBusinessPlans : rawWorkflowBusinessPlans;
   const selectedWorkflowBusinessPlan = selectedWorkflowBusinessPlans.find((plan) => plan.planId === editingBusinessPlanId) ?? selectedWorkflowBusinessPlans[0];
