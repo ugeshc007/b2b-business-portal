@@ -787,7 +787,7 @@ function App() {
   }
 
   async function loadSummary() {
-    if (!token) return;
+    if (!token) return null;
     setLoading(true);
     try {
       const nextSummary = await request<Summary>("/api/dashboard/summary");
@@ -806,6 +806,7 @@ function App() {
         businessPlans: nextSummary.businessPlans ?? [],
         ecommerceOrders: nextSummary.ecommerceOrders ?? [],
       });
+      return nextSummary;
     } finally {
       setLoading(false);
     }
@@ -1308,7 +1309,22 @@ function App() {
           setBusinessImportProgress(100);
           setBusinessImportStatus(`Import complete: ${data.partnersCreated} partners created, ${data.partnersUpdated} partners updated, ${data.rulesSaved} rule set saved.`);
           setMessage(`Business plan imported: ${data.partnersCreated} partners created, ${data.partnersUpdated} partners updated.`);
-          await loadSummary();
+          const nextSummary = await loadSummary();
+          const importedCompanyName = data.rows?.find((row: BusinessPlanScenarioImportResult["rows"][number]) => row.type === "COMPANY")?.name;
+          const importedCompany = (nextSummary?.companies ?? []).find((company) =>
+            (businessPlanCompanyId !== "AUTO" && company.id === businessPlanCompanyId)
+            || company.name === importedCompanyName
+            || company.legalName === importedCompanyName
+          );
+          if (importedCompany) {
+            setPlanAgentCompanyId(importedCompany.id);
+            setCompanyScopeId(isCompanyPortal ? importedCompany.id : "ALL");
+          }
+          setWorkflowTab("uploaded");
+          setActiveView("workflow");
+          setBusinessPlanPreview(null);
+          setBusinessScenarioImportResult(null);
+          setBusinessImportStatus("Import complete. Opening uploaded workflow...");
         } catch (error) {
           setBusinessImportProgress(0);
           setBusinessImportStatus("Import failed.");
