@@ -1048,7 +1048,8 @@ function App() {
 
   async function createCompanyCard(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const name = String(form.get("name") ?? "").trim();
     const legalName = String(form.get("legalName") ?? "").trim();
     const role = String(form.get("role") ?? "BOTH") as "BUYER" | "SELLER" | "BOTH";
@@ -1091,7 +1092,7 @@ function App() {
           bankBranch,
         }),
       });
-      event.currentTarget.reset();
+      formElement.reset();
       setShowCreateCompany(false);
       setExpandedCompanyIds((current) => [...current, created.id]);
       setMessage(`${created.name} company created.`);
