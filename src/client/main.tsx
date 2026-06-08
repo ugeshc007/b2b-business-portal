@@ -594,6 +594,8 @@ function businessPlanSalesSummary(plan: SavedBusinessPlan, targets: Target[], tu
     return sum + ((sellingPrice - buyingPrice) * stock.quantity);
   }, 0);
   const stockQuantity = stockForOwner.reduce((sum, stock) => sum + stock.quantity, 0);
+  const projectedOrActualSalesValue = salesInvoiceValue || stockProjectedSalesValue;
+  const projectedOrActualMargin = salesInvoiceValue ? estimatedSalesMargin : stockProjectedMargin;
   const marginBase = salesInvoiceValue || plannedSalesValue;
 
   return {
@@ -611,6 +613,10 @@ function businessPlanSalesSummary(plan: SavedBusinessPlan, targets: Target[], tu
     stockProjectedMargin,
     stockMarginPercent: stockProjectedSalesValue > 0 ? (stockProjectedMargin / stockProjectedSalesValue) * 100 : undefined,
     stockQuantity,
+    projectedOrActualSalesValue,
+    projectedOrActualMargin,
+    projectedSalesGap: Math.max(0, plannedSalesValue - projectedOrActualSalesValue),
+    projectedCoveragePercent: plannedSalesValue > 0 ? (projectedOrActualSalesValue / plannedSalesValue) * 100 : undefined,
     scheduledSalesCount: salesTargets.length - completedSalesTargets.length,
     totalSalesTargets: salesTargets.length,
   };
@@ -4723,7 +4729,7 @@ function App() {
                             <div>
                               <span>Total Sales Invoice Value</span>
                               <strong>{money(salesSummary.salesInvoiceValue)}</strong>
-                              <small>{salesSummary.invoiceLimit ? `Plan invoice limit ${money(salesSummary.invoiceLimit)}` : plan.salesPlan?.invoiceRuleText || "No sales invoice limit in plan"}</small>
+                              <small>{salesSummary.salesInvoiceCount ? "Actual invoice value generated" : "No sales invoice generated yet"}</small>
                             </div>
                             <div>
                               <span>Available Stock Sales Value</span>
@@ -4732,8 +4738,13 @@ function App() {
                             </div>
                             <div>
                               <span>Purchase To Sales</span>
-                              <strong>{money(salesSummary.purchaseInvoiceValue)} / {money(salesSummary.salesInvoiceValue)}</strong>
-                              <small>{salesSummary.purchaseInvoiceCount} purchase invoices, {salesSummary.salesInvoiceCount} sales invoices; actual margin {money(salesSummary.estimatedSalesMargin)}</small>
+                              <strong>{money(salesSummary.purchaseInvoiceValue)} / {money(salesSummary.projectedOrActualSalesValue)}</strong>
+                              <small>{salesSummary.salesInvoiceCount ? "Using actual sales invoices" : `Using projected stock value; margin ${money(salesSummary.projectedOrActualMargin)}`}</small>
+                            </div>
+                            <div>
+                              <span>Plan Coverage</span>
+                              <strong>{salesSummary.projectedCoveragePercent === undefined ? "-" : percent(salesSummary.projectedCoveragePercent)}</strong>
+                              <small>Remaining sales gap {money(salesSummary.projectedSalesGap)}{salesSummary.invoiceLimit ? `; invoice limit ${money(salesSummary.invoiceLimit)}` : ""}</small>
                             </div>
                           </div>
                           {isEditingPlan && (
