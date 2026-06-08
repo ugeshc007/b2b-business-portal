@@ -1,8 +1,9 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "../db";
-import { appMonthEnd, appMonthStart } from "../../shared/timezone";
-import { createMonthlyTarget, logAgentAudit, runTargetWorkflow, vendorCreateInvoiceForTarget } from "./workflow";
+import { appDate, appMonthEnd, appMonthStart } from "../../shared/timezone";
+import { createMonthlyTarget, logAgentAudit, runTargetWorkflow, scheduleVendorInvoiceForTarget, vendorCreateInvoiceForTarget } from "./workflow";
 import { itemBuyingPrice, itemSellingPrice } from "./stockLedger";
+import { logSystemEvent } from "./appLogger";
 
 type PlanPartner = {
   name: string;
@@ -84,6 +85,36 @@ function formatDateParts(value: Date) {
   const month = String(value.getUTCMonth() + 1).padStart(2, "0");
   const day = String(value.getUTCDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function appTimeMinutes(value: Date | string | number = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-AE", {
+    timeZone: "Asia/Dubai",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(value));
+  const hour = Number(parts.find((part) => part.type === "hour")?.value ?? 0);
+  const minute = Number(parts.find((part) => part.type === "minute")?.value ?? 0);
+  return hour * 60 + minute;
+}
+
+function timeMinutes(value?: string | null) {
+  const match = String(value || "00:00").match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return 0;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function isScheduledTargetDue(targetDate?: string | null, hourFrom?: string | null, now = new Date()) {
+  const date = targetDate || appDate(now);
+  const today = appDate(now);
+  if (date < today) return true;
+  if (date > today) return false;
+  return timeMinutes(hourFrom) <= appTimeMinutes(now);
+}
+
+function isAutomaticScheduledTarget(notes?: string | null) {
+  return /business plan|ai scheduled/i.test(notes || "");
 }
 
 async function findPartnerCompany(mainCompanyId: string, partnerName: string) {
@@ -205,6 +236,56 @@ async function runAndInvoiceTarget(targetId: string) {
   return { workflow, vendorInvoice };
 }
 
+async function sendDueScheduledTarget(targetId: string) {
+  const workflow = await runTargetWorkflow(targetId);
+  scheduleVendorInvoiceForTarget(targetId);
+  return workflow;
+}
+
+export async function processDueScheduledTargets() {
+  const today = appDate();
+  const targets = await prisma.monthlyTarget.findMany({
+    where: {
+      status: "OPEN",
+      periodType: "DAILY",
+      OR: [
+        { targetDate: { lte: today } },
+        { dateFrom: { lte: today } },
+      ],
+    },
+    include: { requirements: true },
+    orderBy: [{ targetDate: "asc" }, { dateFrom: "asc" }, { createdAt: "asc" }],
+    take: 25,
+  });
+  let sent = 0;
+  let skipped = 0;
+  for (const target of targets) {
+    const targetDate = target.targetDate || target.dateFrom;
+    if (target.requirements.length || !isAutomaticScheduledTarget(target.notes) || !isScheduledTargetDue(targetDate, target.hourFrom)) {
+      skipped += 1;
+      continue;
+    }
+    try {
+      await sendDueScheduledTarget(target.id);
+      sent += 1;
+      await logAgentAudit({
+        targetId: target.id,
+        step: "SCHEDULED_PO_SENT",
+        message: `Scheduled PO sent for ${targetDate || today} ${target.hourFrom || ""}.`,
+        metadata: { targetDate, hourFrom: target.hourFrom },
+      });
+    } catch (error) {
+      await logAgentAudit({
+        targetId: target.id,
+        step: "SCHEDULED_PO_FAILED",
+        status: "ERROR",
+        message: error instanceof Error ? error.message : "Scheduled PO send failed",
+      });
+    }
+  }
+  return { checked: targets.length, sent, skipped };
+}
+
 export async function runBusinessPlanAgent(input: {
   companyId: string;
   planId?: string;
@@ -238,12 +319,13 @@ export async function runBusinessPlanAgent(input: {
   const result = {
     companyId: input.companyId,
     month: input.month,
-    purchase: { amount: purchaseAmount, targets: 0, invoices: 0, partners: [] as Array<{ name: string; amount: number; invoices: number }> },
-    sales: { amount: salesAmount, targets: 0, invoices: 0, partners: [] as Array<{ name: string; amount: number; invoices: number }> },
+    purchase: { amount: purchaseAmount, targets: 0, scheduled: 0, sentNow: 0, invoices: 0, partners: [] as Array<{ name: string; amount: number; invoices: number }> },
+    sales: { amount: salesAmount, targets: 0, scheduled: 0, sentNow: 0, invoices: 0, partners: [] as Array<{ name: string; amount: number; invoices: number }> },
     targetIds: [] as string[],
     invoiceIds: [] as string[],
   };
 
+  try {
   const purchaseAllocations = allocationRows(plan.purchaseVendors, purchaseAmount).map((allocation) => ({
     ...allocation,
     split: invoicePlan(plan.purchasePlan, allocation.amount),
@@ -273,17 +355,28 @@ export async function runBusinessPlanAgent(input: {
         lineCount: input.lineCount,
         notes: `Business plan purchase ${index + 1}/${allocation.split.count}: ${allocation.percent.toFixed(2)}% allocation from ${vendor.name}`,
       });
-      const completed = await runAndInvoiceTarget(target.id);
       result.targetIds.push(target.id);
-      result.invoiceIds.push(completed.vendorInvoice.invoice.id);
       result.purchase.targets += 1;
-      result.purchase.invoices += 1;
-      await logAgentAudit({
-        targetId: target.id,
-        step: "BUSINESS_PLAN_PURCHASE_COMPLETED",
-        message: `Vendor invoice received and stock updated for ${vendor.name}.`,
-        metadata: { allocationAmount: allocation.amount, invoiceId: completed.vendorInvoice.invoice.id },
-      });
+      if (isScheduledTargetDue(targetDate, "09:00")) {
+        const completed = await runAndInvoiceTarget(target.id);
+        result.invoiceIds.push(completed.vendorInvoice.invoice.id);
+        result.purchase.sentNow += 1;
+        result.purchase.invoices += 1;
+        await logAgentAudit({
+          targetId: target.id,
+          step: "BUSINESS_PLAN_PURCHASE_COMPLETED",
+          message: `Due purchase target executed for ${vendor.name}.`,
+          metadata: { allocationAmount: allocation.amount, invoiceId: completed.vendorInvoice.invoice.id },
+        });
+      } else {
+        result.purchase.scheduled += 1;
+        await logAgentAudit({
+          targetId: target.id,
+          step: "BUSINESS_PLAN_PURCHASE_SCHEDULED",
+          message: `Purchase target scheduled for ${targetDate} 09:00.`,
+          metadata: { allocationAmount: allocation.amount, targetDate },
+        });
+      }
     }
     result.purchase.partners.push({ name: vendor.name, amount: money(allocation.amount).toNumber(), invoices: allocation.split.count });
   }
@@ -317,25 +410,53 @@ export async function runBusinessPlanAgent(input: {
         lineCount: input.lineCount,
         notes: `Business plan sales ${index + 1}/${allocation.split.count}: ${allocation.percent.toFixed(2)}% allocation to ${customer.name}`,
       });
-      const completed = await runAndInvoiceTarget(target.id);
       result.targetIds.push(target.id);
-      result.invoiceIds.push(completed.vendorInvoice.invoice.id);
       result.sales.targets += 1;
-      result.sales.invoices += 1;
-      await logAgentAudit({
-        targetId: target.id,
-        step: "BUSINESS_PLAN_SALES_COMPLETED",
-        message: `Sales invoice created for ${customer.name} from available stock.`,
-        metadata: { allocationAmount: allocation.amount, invoiceId: completed.vendorInvoice.invoice.id },
-      });
+      if (isScheduledTargetDue(targetDate, "09:00")) {
+        const completed = await runAndInvoiceTarget(target.id);
+        result.invoiceIds.push(completed.vendorInvoice.invoice.id);
+        result.sales.sentNow += 1;
+        result.sales.invoices += 1;
+        await logAgentAudit({
+          targetId: target.id,
+          step: "BUSINESS_PLAN_SALES_COMPLETED",
+          message: `Due sales target executed for ${customer.name}.`,
+          metadata: { allocationAmount: allocation.amount, invoiceId: completed.vendorInvoice.invoice.id },
+        });
+      } else {
+        result.sales.scheduled += 1;
+        await logAgentAudit({
+          targetId: target.id,
+          step: "BUSINESS_PLAN_SALES_SCHEDULED",
+          message: `Sales target scheduled for ${targetDate} 09:00.`,
+          metadata: { allocationAmount: allocation.amount, targetDate },
+        });
+      }
     }
     result.sales.partners.push({ name: customer.name, amount: money(allocation.amount).toNumber(), invoices: allocation.split.count });
   }
 
   await logAgentAudit({
     step: "BUSINESS_PLAN_AGENT_COMPLETED",
-    message: `Business plan agent completed: ${result.purchase.invoices} purchase invoices, ${result.sales.invoices} sales invoices.`,
+    message: `Business plan agent scheduled ${result.purchase.scheduled + result.sales.scheduled} future targets and executed ${result.purchase.sentNow + result.sales.sentNow} due targets.`,
     metadata: result,
   });
   return result;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Business plan agent failed";
+    logSystemEvent("ERROR", "business_plan_agent_failed", {
+      message,
+      companyId: input.companyId,
+      planId: planKey,
+      month: input.month,
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    await logAgentAudit({
+      step: "BUSINESS_PLAN_AGENT_FAILED",
+      status: "ERROR",
+      message,
+      metadata: { companyId: input.companyId, planId: planKey, month: input.month },
+    });
+    throw error;
+  }
 }

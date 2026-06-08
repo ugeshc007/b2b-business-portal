@@ -5,7 +5,7 @@ import { appDate, appDateTime } from "../../shared/timezone";
 
 type LogLevel = "INFO" | "WARN" | "ERROR";
 
-const retentionDays = Number(process.env.LOG_RETENTION_DAYS || 14);
+const retentionDays = Number(process.env.LOG_RETENTION_DAYS || 1);
 const logsDir = path.resolve(process.cwd(), "storage", "logs");
 const redactedKeys = [
   "authorization",
@@ -67,6 +67,10 @@ function writeLog(level: LogLevel, event: string, data: Record<string, unknown>)
   } catch (error) {
     console.error("Could not write application log", error);
   }
+}
+
+export function logSystemEvent(level: LogLevel, event: string, data: Record<string, unknown> = {}) {
+  writeLog(level, event, data);
 }
 
 function requestId() {
@@ -145,6 +149,19 @@ export function getRecentLogs(options: { level?: string; limit?: number } = {}) 
     }
   }
   return rows;
+}
+
+export function getRecentRawLogs(options: { limit?: number } = {}) {
+  fs.mkdirSync(logsDir, { recursive: true });
+  cleanupOldLogs();
+  const limit = Math.min(Math.max(options.limit ?? 150, 1), 500);
+  const file = path.basename(logPath());
+  const filePath = path.join(logsDir, file);
+  if (!fs.existsSync(filePath)) return [];
+  return fs.readFileSync(filePath, "utf8")
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .slice(-limit);
 }
 
 export function getLogStatus() {

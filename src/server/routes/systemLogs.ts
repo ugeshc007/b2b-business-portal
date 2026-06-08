@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { requireAuth, requireFinanceOrAdmin } from "../middleware";
-import { getLogDownload, getLogStatus, getRecentLogs } from "../services/appLogger";
+import { getLogDownload, getLogStatus, getRecentLogs, getRecentRawLogs } from "../services/appLogger";
 
 export const systemLogsRouter = Router();
 systemLogsRouter.use(requireAuth);
@@ -12,6 +12,7 @@ systemLogsRouter.get("/", (req, res, next) => {
     res.json({
       status: getLogStatus(),
       logs: getRecentLogs({ level, limit }),
+      rawLogs: getRecentRawLogs({ limit }),
     });
   } catch (error) {
     next(error);

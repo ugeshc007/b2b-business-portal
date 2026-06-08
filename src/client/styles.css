@@ -198,6 +198,41 @@ textarea {
   margin-top: 0;
 }
 
+.live-log-panel {
+  border: 1px solid #d8dfda;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #101814;
+}
+
+.live-log-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  color: #eaf5ee;
+  background: #18251e;
+}
+
+.live-log-head span {
+  color: #a8b9af;
+}
+
+.live-log-panel pre {
+  margin: 0;
+  min-height: 240px;
+  max-height: 420px;
+  overflow: auto;
+  padding: 12px;
+  color: #d7eadf;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .system-log-table {
   border: 1px solid #e1e7e3;
   border-radius: 8px;
@@ -1194,6 +1229,38 @@ nav .nav-button.active {
   border-top: 1px solid #edf1ee;
 }
 
+.workflow-plan-sales-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  gap: 10px;
+  padding: 0 16px 14px;
+}
+
+.workflow-plan-sales-summary > div {
+  display: grid;
+  gap: 5px;
+  min-height: 92px;
+  padding: 12px;
+  border: 1px solid #d7e4dc;
+  border-radius: 8px;
+  background: #f8fbf9;
+}
+
+.workflow-plan-sales-summary span {
+  color: #53645a;
+  font-size: 0.86rem;
+}
+
+.workflow-plan-sales-summary strong {
+  color: #102019;
+  font-size: 1.05rem;
+}
+
+.workflow-plan-sales-summary small {
+  color: #66756a;
+  line-height: 1.35;
+}
+
 .workflow-plan-table {
   overflow-x: auto;
 }
@@ -1954,6 +2021,7 @@ nav .nav-button.active {
     .company-card-address,
     .agent-task-form,
     .workflow-plan-summary,
+    .workflow-plan-sales-summary,
     .business-plan-edit-form,
     .business-plan-edit-lines,
     .agent-progress-steps,

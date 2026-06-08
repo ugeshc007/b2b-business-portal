@@ -379,6 +379,7 @@ type SystemLogResponse = {
     totalBytes: number;
   };
   logs: SystemLogEntry[];
+  rawLogs: string[];
 };
 
 type FlushResult = {
@@ -525,6 +526,94 @@ function businessPlanBelongsToCompany(plan: SavedBusinessPlan, company?: Company
     .map(normalizedBusinessName)
     .filter(Boolean);
   return planNames.some((planName) => companyNames.some((companyName) => planName === companyName || planName.includes(companyName) || companyName.includes(planName)));
+}
+
+function parseBusinessPlanInvoiceLimit(value?: string) {
+  const match = (value ?? "").match(/(?:below|under|less\s+than|limit|max(?:imum)?)\s*(?:aed\s*)?([0-9][0-9,]*(?:\.\d+)?)\s*(k|m|million|thousand)?/i);
+  if (!match) return undefined;
+  const amount = Number(match[1].replaceAll(",", ""));
+  if (!Number.isFinite(amount) || amount <= 0) return undefined;
+  const suffix = match[2]?.toLowerCase();
+  if (suffix === "m" || suffix === "million") return amount * 1_000_000;
+  if (suffix === "k" || suffix === "thousand") return amount * 1_000;
+  return amount;
+}
+
+function preferredInvoiceCount(min?: number, max?: number) {
+  if (min === undefined && max === undefined) return "-";
+  if (min !== undefined && max !== undefined && min !== max) return `${min}-${max}`;
+  return String(min ?? max);
+}
+
+function businessPlanSalesSummary(plan: SavedBusinessPlan, targets: Target[], turnoverTargets: TurnoverTarget[], stockRows: Stock[]) {
+  const ownerCompanyId = plan.mainCompanyId || plan.companyId;
+  const planMonth = plan.planPeriodDateFrom?.slice(0, 7);
+  const planSalesTarget = turnoverTargets.find((target) =>
+    target.companyId === ownerCompanyId && target.type === "SALES" && (!planMonth || target.month === planMonth)
+  );
+  const planPurchaseTarget = turnoverTargets.find((target) =>
+    target.companyId === ownerCompanyId && target.type === "PURCHASE" && (!planMonth || target.month === planMonth)
+  );
+  const plannedSalesValue = Number(planSalesTarget?.amount ?? plan.purchasePlan?.transactionAmountMin ?? 0);
+  const invoiceLimit = parseBusinessPlanInvoiceLimit(plan.salesPlan?.invoiceRuleText || plan.purchasePlan?.invoiceRuleText);
+  const plannedInvoiceCount = preferredInvoiceCount(plan.salesPlan?.invoiceCountMin, plan.salesPlan?.invoiceCountMax);
+  const estimatedInvoiceCount = plannedInvoiceCount === "-"
+    ? invoiceLimit && plannedSalesValue > 0 ? String(Math.max(1, Math.ceil(plannedSalesValue / invoiceLimit))) : "-"
+    : plannedInvoiceCount;
+
+  const planTargets = targets.filter((target) => {
+    const targetDate = target.targetDate || target.dateFrom || "";
+    const inPeriod = (!plan.planPeriodDateFrom || !targetDate || targetDate >= plan.planPeriodDateFrom)
+      && (!plan.planPeriodDateTo || !targetDate || targetDate <= plan.planPeriodDateTo);
+    const belongsToOwner = target.buyerCompany.id === ownerCompanyId || target.sellerCompany.id === ownerCompanyId;
+    const businessPlanGenerated = /business plan|ai scheduled/i.test(target.notes || "");
+    return belongsToOwner && inPeriod && businessPlanGenerated;
+  });
+  const salesTargets = planTargets.filter((target) => target.direction === "SALES" && target.sellerCompany.id === ownerCompanyId);
+  const purchaseTargets = planTargets.filter((target) => target.direction === "PURCHASE" && target.buyerCompany.id === ownerCompanyId);
+  const completedSalesTargets = salesTargets.filter((target) => target.invoiceNumber || ["COMPLETED", "INVOICED"].includes(target.status));
+  const completedPurchaseTargets = purchaseTargets.filter((target) => target.invoiceNumber || ["COMPLETED", "INVOICED"].includes(target.status));
+  const salesInvoiceValue = completedSalesTargets.reduce((sum, target) => sum + Number(target.documentValue ?? target.amountVolume ?? 0), 0);
+  const purchaseInvoiceValue = completedPurchaseTargets.reduce((sum, target) => sum + Number(target.documentValue ?? target.amountVolume ?? 0), 0);
+  const estimatedSalesMargin = completedSalesTargets.reduce((sum, target) => {
+    const lineMargin = target.lines.reduce((lineSum, line) => {
+      const sellingPrice = Number(line.maxPrice ?? line.item.maxPrice ?? line.item.expectedPrice ?? 0);
+      const buyingPrice = Number(line.item.buyingPrice ?? line.item.expectedPrice ?? 0);
+      return lineSum + ((sellingPrice - buyingPrice) * line.quantity);
+    }, 0);
+    return sum + lineMargin;
+  }, 0);
+  const stockForOwner = stockRows.filter((stock) => stock.company.id === ownerCompanyId && stock.quantity > 0);
+  const stockProjectedSalesValue = stockForOwner.reduce((sum, stock) => {
+    const sellingPrice = Number(stock.item.maxPrice ?? stock.item.expectedPrice ?? 0);
+    return sum + (stock.quantity * sellingPrice);
+  }, 0);
+  const stockProjectedMargin = stockForOwner.reduce((sum, stock) => {
+    const sellingPrice = Number(stock.item.maxPrice ?? stock.item.expectedPrice ?? 0);
+    const buyingPrice = Number(stock.item.buyingPrice ?? stock.item.expectedPrice ?? 0);
+    return sum + ((sellingPrice - buyingPrice) * stock.quantity);
+  }, 0);
+  const stockQuantity = stockForOwner.reduce((sum, stock) => sum + stock.quantity, 0);
+  const marginBase = salesInvoiceValue || plannedSalesValue;
+
+  return {
+    plannedSalesValue,
+    plannedPurchaseValue: Number(planPurchaseTarget?.amount ?? plan.purchasePlan?.transactionAmountMin ?? 0),
+    estimatedInvoiceCount,
+    invoiceLimit,
+    salesInvoiceCount: completedSalesTargets.length,
+    salesInvoiceValue,
+    purchaseInvoiceCount: completedPurchaseTargets.length,
+    purchaseInvoiceValue,
+    estimatedSalesMargin,
+    marginPercent: marginBase > 0 ? (estimatedSalesMargin / marginBase) * 100 : undefined,
+    stockProjectedSalesValue,
+    stockProjectedMargin,
+    stockMarginPercent: stockProjectedSalesValue > 0 ? (stockProjectedMargin / stockProjectedSalesValue) * 100 : undefined,
+    stockQuantity,
+    scheduledSalesCount: salesTargets.length - completedSalesTargets.length,
+    totalSalesTargets: salesTargets.length,
+  };
 }
 
 function dateInputValue(date = new Date()) {
@@ -724,6 +813,7 @@ function App() {
   const [showBusinessPlanEditor, setShowBusinessPlanEditor] = useState(false);
   const [editingBusinessPlanId, setEditingBusinessPlanId] = useState("");
   const [businessPlanRunStatus, setBusinessPlanRunStatus] = useState<Record<string, "IDLE" | "RUNNING" | "STOPPED" | "COMPLETED" | "FAILED">>({});
+  const [expandedWorkflowPlanIds, setExpandedWorkflowPlanIds] = useState<string[]>([]);
   const businessPlanAbortControllers = useRef<Record<string, AbortController>>({});
   const [workflowTab, setWorkflowTab] = useState<"uploaded" | "manual">("uploaded");
   const [workflowTodayPage, setWorkflowTodayPage] = useState(1);
@@ -829,16 +919,16 @@ function App() {
     }
   }
 
-  async function loadSystemLogs(level = systemLogLevel) {
+  async function loadSystemLogs(level = systemLogLevel, options: { silent?: boolean } = {}) {
     if (!token) return;
-    setLoading(true);
+    if (!options.silent) setLoading(true);
     try {
       const query = level === "ALL" ? "?limit=150" : `?level=${encodeURIComponent(level)}&limit=150`;
       setSystemLogs(await request<SystemLogResponse>(`/api/system-logs${query}`));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not load system logs");
     } finally {
-      setLoading(false);
+      if (!options.silent) setLoading(false);
     }
   }
 
@@ -875,6 +965,14 @@ function App() {
     if (settingsTab === "systemLogs") {
       loadSystemLogs().catch((error) => setMessage(error.message));
     }
+  }, [settingsTab, systemLogLevel, token]);
+
+  useEffect(() => {
+    if (settingsTab !== "systemLogs" || !token) return;
+    const timer = window.setInterval(() => {
+      loadSystemLogs(systemLogLevel, { silent: true }).catch(() => undefined);
+    }, 5000);
+    return () => window.clearInterval(timer);
   }, [settingsTab, systemLogLevel, token]);
 
   useEffect(() => {
@@ -1460,6 +1558,13 @@ function App() {
             setWorkflowOtherPage(1);
             Object.values(businessPlanAbortControllers.current).forEach((controller) => controller.abort());
             businessPlanAbortControllers.current = {};
+            setActiveView("workflow");
+            setSettingsTab("company");
+          } else if (result.selectedCategories.includes("stock") || result.selectedCategories.includes("productMaster")) {
+            setActiveView("stock");
+            setSettingsTab("company");
+          } else if (result.selectedCategories.includes("communicationLogs") || result.selectedCategories.includes("applicationLogs")) {
+            setSettingsTab(result.selectedCategories.includes("applicationLogs") ? "systemLogs" : "log");
           }
           await loadSummary();
         } catch (error) {
@@ -1937,8 +2042,8 @@ function App() {
         setPlanAgentStatus("Running imported business plan rules...");
         try {
           const result = await request<{
-            purchase: { invoices: number; targets: number };
-            sales: { invoices: number; targets: number };
+            purchase: { invoices: number; targets: number; scheduled?: number; sentNow?: number };
+            sales: { invoices: number; targets: number; scheduled?: number; sentNow?: number };
           }>("/api/workflow/business-plan-agent/run", {
             method: "POST",
             body: JSON.stringify({
@@ -1948,7 +2053,9 @@ function App() {
               dateTo: selectedWorkflowBusinessPlan?.planPeriodDateTo || undefined,
             }),
           });
-          const status = `Completed ${result.purchase.invoices} purchase invoices and ${result.sales.invoices} sales invoices.`;
+          const scheduled = (result.purchase.scheduled ?? 0) + (result.sales.scheduled ?? 0);
+          const sentNow = (result.purchase.sentNow ?? result.purchase.invoices) + (result.sales.sentNow ?? result.sales.invoices);
+          const status = `Business plan scheduled ${scheduled} future target${scheduled === 1 ? "" : "s"} and sent ${sentNow} due PO${sentNow === 1 ? "" : "s"} now.`;
           setPlanAgentStatus(status);
           setMessage(status);
           await loadSummary();
@@ -2012,7 +2119,9 @@ function App() {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error ?? "Could not run business plan agent");
       setBusinessPlanRunStatus((current) => ({ ...current, [plan.planId]: "COMPLETED" }));
-      setPlanAgentStatus(`Business plan completed: ${data.purchase?.invoices ?? 0} purchase invoices and ${data.sales?.invoices ?? 0} sales invoices.`);
+      const scheduled = (data.purchase?.scheduled ?? 0) + (data.sales?.scheduled ?? 0);
+      const sentNow = (data.purchase?.sentNow ?? data.purchase?.invoices ?? 0) + (data.sales?.sentNow ?? data.sales?.invoices ?? 0);
+      setPlanAgentStatus(`Business plan scheduled ${scheduled} future target${scheduled === 1 ? "" : "s"} and sent ${sentNow} due PO${sentNow === 1 ? "" : "s"} now.`);
       await loadSummary();
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
@@ -3953,8 +4062,8 @@ function App() {
               <div className="settings-section system-log-section">
                 <div className="system-log-toolbar">
                   <div>
-                    <strong>Request / Response Logs</strong>
-                    <span>Daily rotated files in server storage. Sensitive fields are redacted.</span>
+                    <strong>Live System Logs</strong>
+                    <span>Today&apos;s raw log tail refreshes automatically. Sensitive fields are redacted.</span>
                   </div>
                   <label>
                     Level
@@ -3973,10 +4082,22 @@ function App() {
                   <div className="config-status ready">
                     <strong>Log Rotation</strong>
                     <span>Path: {systemLogs.status.logsDir}</span>
-                    <span>Retention: {systemLogs.status.retentionDays} days</span>
+                    <span>Retention: {systemLogs.status.retentionDays} day{systemLogs.status.retentionDays === 1 ? "" : "s"}; older files rotate out automatically</span>
                     <span>Files: {systemLogs.status.files}, Size: {(systemLogs.status.totalBytes / 1024).toFixed(1)} KB</span>
                   </div>
                 )}
+
+                <div className="live-log-panel">
+                  <div className="live-log-head">
+                    <strong>Raw Live Tail</strong>
+                    <span>Auto refresh every 5 seconds</span>
+                  </div>
+                  <pre>
+                    {(systemLogs?.rawLogs ?? []).length
+                      ? (systemLogs?.rawLogs ?? []).join("\n")
+                      : "No raw log lines for today yet."}
+                  </pre>
+                </div>
 
                 <div className="table system-log-table">
                   {(systemLogs?.logs ?? []).map((log, index) => (
@@ -4545,6 +4666,8 @@ function App() {
                 {selectedWorkflowBusinessPlans.map((plan, index) => {
                   const status = businessPlanRunStatus[plan.planId] ?? "IDLE";
                   const isEditingPlan = showBusinessPlanEditor && editingBusinessPlanId === plan.planId;
+                  const isExpandedPlan = expandedWorkflowPlanIds.includes(plan.planId) || isEditingPlan;
+                  const salesSummary = businessPlanSalesSummary(plan, summary?.targets ?? [], summary?.turnoverTargets ?? [], summary?.stock ?? []);
                   return (
                     <article className="workflow-plan-item" key={plan.planId}>
                       <div className="workflow-plan-item-head">
@@ -4556,19 +4679,27 @@ function App() {
                           <span className={`status-badge ${status === "RUNNING" ? "po_sent" : status === "FAILED" ? "held" : status === "STOPPED" ? "stopped" : status === "COMPLETED" ? "completed" : "open"}`}>{status}</span>
                           <button type="button" disabled={loading || status === "RUNNING"} onClick={() => runBusinessPlanById(plan)}><Play size={16} /> Start Agent</button>
                           <button type="button" className="secondary-button" disabled={status !== "RUNNING"} onClick={() => stopBusinessPlanRun(plan.planId)}><Square size={16} /> Stop</button>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => setExpandedWorkflowPlanIds((current) => current.includes(plan.planId) ? current.filter((id) => id !== plan.planId) : [...current, plan.planId])}
+                          >
+                            {isExpandedPlan ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                            {isExpandedPlan ? "Close" : "Expand"}
+                          </button>
                           {!plan.parseError && (
-                            <button type="button" className="secondary-button" onClick={() => { setEditingBusinessPlanId(plan.planId); setShowBusinessPlanEditor((current) => editingBusinessPlanId === plan.planId ? !current : true); }}>
+                            <button type="button" className="secondary-button" onClick={() => { setExpandedWorkflowPlanIds((current) => current.includes(plan.planId) ? current : [...current, plan.planId]); setEditingBusinessPlanId(plan.planId); setShowBusinessPlanEditor((current) => editingBusinessPlanId === plan.planId ? !current : true); }}>
                               <Edit size={16} /> {isEditingPlan ? "Close Modify" : "Modify Plan"}
                             </button>
                           )}
                         </div>
                       </div>
-                      {plan.parseError ? (
+                      {plan.parseError && isExpandedPlan ? (
                         <div className="config-status missing">
                           <strong>Saved plan needs review</strong>
                           <span>{plan.parseError}</span>
                         </div>
-                      ) : (
+                      ) : !plan.parseError && isExpandedPlan ? (
                         <>
                           <div className="workflow-plan-summary">
                             <Metric label="Plan Owner" value={plan.companyName} />
@@ -4577,6 +4708,33 @@ function App() {
                             <Metric label="Vendors" value={plan.purchaseVendors?.length ?? 0} />
                             <Metric label="Customers" value={plan.salesCustomers?.length ?? 0} />
                             <Metric label="Plan Period" value={plan.planPeriodDateFrom || plan.planPeriodDateTo ? `${plan.planPeriodDateFrom || "open"} to ${plan.planPeriodDateTo || "open"}` : "-"} />
+                          </div>
+                          <div className="workflow-plan-sales-summary">
+                            <div>
+                              <span>Planned Sales Volume</span>
+                              <strong>{salesSummary.plannedSalesValue > 0 ? money(salesSummary.plannedSalesValue) : "-"}</strong>
+                              <small>{salesSummary.estimatedInvoiceCount === "-" ? "Invoice count not defined" : `${salesSummary.estimatedInvoiceCount} planned invoice${salesSummary.estimatedInvoiceCount === "1" ? "" : "s"}`}</small>
+                            </div>
+                            <div>
+                              <span>Actual Sales Invoices</span>
+                              <strong>{salesSummary.salesInvoiceCount}</strong>
+                              <small>{salesSummary.totalSalesTargets} sales target{salesSummary.totalSalesTargets === 1 ? "" : "s"} created; {salesSummary.scheduledSalesCount} scheduled/open</small>
+                            </div>
+                            <div>
+                              <span>Total Sales Invoice Value</span>
+                              <strong>{money(salesSummary.salesInvoiceValue)}</strong>
+                              <small>{salesSummary.invoiceLimit ? `Plan invoice limit ${money(salesSummary.invoiceLimit)}` : plan.salesPlan?.invoiceRuleText || "No sales invoice limit in plan"}</small>
+                            </div>
+                            <div>
+                              <span>Available Stock Sales Value</span>
+                              <strong>{money(salesSummary.stockProjectedSalesValue)}</strong>
+                              <small>{salesSummary.stockQuantity} qty from stock; margin {money(salesSummary.stockProjectedMargin)} {salesSummary.stockMarginPercent === undefined ? "" : `(${percent(salesSummary.stockMarginPercent)})`}</small>
+                            </div>
+                            <div>
+                              <span>Purchase To Sales</span>
+                              <strong>{money(salesSummary.purchaseInvoiceValue)} / {money(salesSummary.salesInvoiceValue)}</strong>
+                              <small>{salesSummary.purchaseInvoiceCount} purchase invoices, {salesSummary.salesInvoiceCount} sales invoices; actual margin {money(salesSummary.estimatedSalesMargin)}</small>
+                            </div>
                           </div>
                           {isEditingPlan && (
                             <form className="business-plan-edit-form" key={`edit-${plan.planId}-${planAgentMonth}`} onSubmit={saveBusinessPlanEdits}>
@@ -4635,7 +4793,7 @@ function App() {
                             })}
                           </div>
                         </>
-                      )}
+                      ) : null}
                     </article>
                   );
                 })}

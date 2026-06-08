@@ -7,6 +7,7 @@ import { purchaseOrderHtml } from "./documentEmail";
 import { createStockMovement, itemBuyingPrice, itemSellingPrice } from "./stockLedger";
 import nodemailer from "nodemailer";
 import { appDate } from "../../shared/timezone";
+import fs from "fs";
 
 function money(value: Prisma.Decimal.Value) {
   return new Prisma.Decimal(value).toDecimalPlaces(2);
@@ -321,6 +322,12 @@ export function scheduleVendorInvoiceForTarget(targetId: string, delayMs = vendo
   scheduledVendorInvoices.set(targetId, timeout);
 }
 
+export function cancelScheduledVendorInvoiceForTarget(targetId: string) {
+  const timeout = scheduledVendorInvoices.get(targetId);
+  if (timeout) clearTimeout(timeout);
+  scheduledVendorInvoices.delete(targetId);
+}
+
 export async function createAgentInstructionTarget(input: {
   companyId?: string;
   counterpartyId?: string;
@@ -587,17 +594,131 @@ export async function updateMonthlyTarget(targetId: string, input: {
 }
 
 export async function deleteMonthlyTarget(targetId: string) {
+  cancelScheduledVendorInvoiceForTarget(targetId);
+
   const target = await prisma.monthlyTarget.findUnique({
     where: { id: targetId },
-    include: { requirements: true },
+    include: {
+      requirements: {
+        include: {
+          emails: true,
+          quotations: {
+            include: {
+              purchaseOrder: {
+                include: {
+                  invoice: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
   });
   if (!target) throw new Error("Target not found");
-  if (target.requirements.length > 0 || !["OPEN", "STOPPED"].includes(target.status)) {
-    throw new Error("Target cannot be deleted after workflow has started");
+
+  const requirementIds = target.requirements.map((requirement) => requirement.id);
+  const quotationIds = target.requirements.flatMap((requirement) => requirement.quotations.map((quotation) => quotation.id));
+  const orders = target.requirements.flatMap((requirement) =>
+    requirement.quotations.flatMap((quotation) => (quotation.purchaseOrder ? [quotation.purchaseOrder] : [])),
+  );
+  const orderIds = orders.map((order) => order.id);
+  const invoices = orders.flatMap((order) => (order.invoice ? [order.invoice] : []));
+  const invoiceIds = invoices.map((invoice) => invoice.id);
+  const filePaths = Array.from(
+    new Set(
+      [
+        ...target.requirements.flatMap((requirement) => requirement.emails.map((email) => email.attachmentPath)),
+        ...invoices.map((invoice) => invoice.pdfPath),
+      ].filter((filePath): filePath is string => Boolean(filePath)),
+    ),
+  );
+  const emailSubjects = [
+    ...orders.map((order) => `Purchase Order ${order.poNumber}`),
+    ...invoices.map((invoice) => `Tax Invoice ${invoice.invoiceNumber}`),
+  ];
+
+  const deleted = await prisma.$transaction(async (tx) => {
+    const movements = orderIds.length
+      ? await tx.stockMovement.findMany({
+          where: {
+            source: "PURCHASE_ORDER",
+            reference: { in: orderIds },
+          },
+        })
+      : [];
+
+    for (const movement of movements) {
+      if (movement.type === "PURCHASE") {
+        const stock = await tx.stock.findUnique({
+          where: { companyId_itemId: { companyId: movement.companyId, itemId: movement.itemId } },
+        });
+        if (stock) {
+          await tx.stock.update({
+            where: { id: stock.id },
+            data: { quantity: Math.max(0, stock.quantity - movement.quantity) },
+          });
+        }
+      } else if (movement.type === "SALE") {
+        await tx.stock.upsert({
+          where: { companyId_itemId: { companyId: movement.companyId, itemId: movement.itemId } },
+          update: { quantity: { increment: movement.quantity } },
+          create: { companyId: movement.companyId, itemId: movement.itemId, quantity: movement.quantity },
+        });
+      }
+    }
+
+    if (movements.length) await tx.stockMovement.deleteMany({ where: { id: { in: movements.map((movement) => movement.id) } } });
+    if (requirementIds.length || filePaths.length || emailSubjects.length) {
+      await tx.emailLog.deleteMany({
+        where: {
+          OR: [
+            ...(requirementIds.length ? [{ requirementId: { in: requirementIds } }] : []),
+            ...(filePaths.length ? [{ attachmentPath: { in: filePaths } }] : []),
+            ...(emailSubjects.length ? [{ subject: { in: emailSubjects } }] : []),
+          ],
+        },
+      });
+    }
+    if (quotationIds.length) await tx.agentDecision.deleteMany({ where: { quotationId: { in: quotationIds } } });
+    if (invoiceIds.length) {
+      await tx.invoiceLine.deleteMany({ where: { invoiceId: { in: invoiceIds } } });
+      await tx.invoice.deleteMany({ where: { id: { in: invoiceIds } } });
+    }
+    if (orderIds.length) {
+      await tx.purchaseOrderLine.deleteMany({ where: { purchaseOrderId: { in: orderIds } } });
+      await tx.purchaseOrder.deleteMany({ where: { id: { in: orderIds } } });
+    }
+    if (quotationIds.length) {
+      await tx.quotationLine.deleteMany({ where: { quotationId: { in: quotationIds } } });
+      await tx.quotation.deleteMany({ where: { id: { in: quotationIds } } });
+    }
+    if (requirementIds.length) {
+      await tx.requirementLine.deleteMany({ where: { requirementId: { in: requirementIds } } });
+      await tx.requirement.deleteMany({ where: { id: { in: requirementIds } } });
+    }
+    await tx.agentAuditLog.deleteMany({ where: { targetId } });
+    await tx.monthlyTargetLine.deleteMany({ where: { targetId } });
+    await tx.monthlyTarget.delete({ where: { id: targetId } });
+
+    return {
+      requirements: requirementIds.length,
+      quotations: quotationIds.length,
+      purchaseOrders: orderIds.length,
+      invoices: invoiceIds.length,
+      stockMovements: movements.length,
+    };
+  });
+
+  for (const filePath of filePaths) {
+    try {
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    } catch (error) {
+      console.warn(`Could not delete workflow document ${filePath}:`, error);
+    }
   }
 
-  await prisma.monthlyTarget.delete({ where: { id: targetId } });
-  return { deleted: true, id: targetId };
+  return { deleted: true, id: targetId, ...deleted, files: filePaths.length };
 }
 
 export async function stopTargetWorkflow(targetId: string) {

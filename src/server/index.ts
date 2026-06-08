@@ -1,5 +1,6 @@
 import { createApp } from "./app";
 import { env } from "./env";
+import { processDueScheduledTargets } from "./services/businessPlanAgent";
 
 const app = createApp();
 
@@ -10,6 +11,27 @@ const server = app.listen(env.apiPort, host, () => {
 });
 
 server.ref();
+
+let scheduledTargetCheckRunning = false;
+async function checkScheduledTargets() {
+  if (scheduledTargetCheckRunning) return;
+  scheduledTargetCheckRunning = true;
+  try {
+    const result = await processDueScheduledTargets();
+    if (result.sent > 0) console.log(`Scheduled workflow sent ${result.sent} due PO(s).`);
+  } catch (error) {
+    console.error("Scheduled workflow check failed", error);
+  } finally {
+    scheduledTargetCheckRunning = false;
+  }
+}
+
+const scheduledTargetInterval = setInterval(() => {
+  void checkScheduledTargets();
+}, 60_000);
+scheduledTargetInterval.unref();
+void checkScheduledTargets();
+
 server.on("error", (error) => {
   console.error("B2B API server error", error);
 });

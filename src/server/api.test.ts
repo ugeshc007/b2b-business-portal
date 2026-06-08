@@ -1958,17 +1958,20 @@ describe("api", () => {
       .send({ email: "admin@example.com", password: "ChangeMe123!" })
       .expect(200);
 
-    await request(app)
+    const deleted = await request(app)
       .delete(`/api/workflow/targets/${target.id}`)
-      .set("Authorization", `Bearer ${login.body.token}`)
-      .expect(400);
-
-    const pdf = await request(app)
-      .get(`/api/workflow/targets/${target.id}/po-pdf`)
       .set("Authorization", `Bearer ${login.body.token}`)
       .expect(200);
 
-    expect(pdf.headers["content-type"]).toContain("application/pdf");
+    expect(deleted.body.deleted).toBe(true);
+    expect(deleted.body.requirements).toBe(1);
+    expect(deleted.body.purchaseOrders).toBe(1);
+    expect(await prisma.monthlyTarget.count()).toBe(0);
+    expect(await prisma.requirement.count()).toBe(0);
+    expect(await prisma.purchaseOrder.count()).toBe(0);
+    expect(await prisma.stockMovement.count()).toBe(0);
+    expect((await prisma.stock.findUnique({ where: { companyId_itemId: { companyId: seller.id, itemId: item.id } } }))?.quantity).toBe(20);
+    expect((await prisma.stock.findUnique({ where: { companyId_itemId: { companyId: buyer.id, itemId: item.id } } }))?.quantity ?? 0).toBe(0);
   });
 
   it("returns invoice detail and logs invoice email sending", async () => {
