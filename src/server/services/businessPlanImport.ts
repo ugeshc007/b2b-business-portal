@@ -131,6 +131,9 @@ export type BusinessPlanProductImportResult = {
 
 export type BusinessPlanScenarioImportResult = {
   company: "CREATED" | "UPDATED" | "SKIPPED";
+  companyId?: string;
+  companyName?: string;
+  planId?: string;
   planPeriodDateFrom?: string;
   planPeriodDateTo?: string;
   partnersCreated: number;
@@ -862,6 +865,8 @@ export async function importBusinessPlanScenario(buffer: Buffer, options: { comp
       });
   const mainCompany = mainUpsert.company;
   result.company = mainUpsert.status;
+  result.companyId = mainCompany.id;
+  result.companyName = mainCompany.name;
   result.rows.push({
     type: "COMPANY",
     name: mainCompany.name,
@@ -960,6 +965,7 @@ export async function importBusinessPlanScenario(buffer: Buffer, options: { comp
     salesPlan: preview.scenario.salesPlan,
   };
   const planKey = `businessPlan:${mainCompany.id}:${Date.now()}`;
+  result.planId = planKey;
 
   await prisma.appSetting.create({
     data: {

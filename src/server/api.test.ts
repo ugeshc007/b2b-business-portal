@@ -538,6 +538,8 @@ describe("api", () => {
     expect(imported.body.partnersCreated).toBe(4);
     expect(imported.body.turnoverTargetsCreated).toBe(1);
     expect(imported.body.rulesSaved).toBe(1);
+    expect(imported.body.companyId).toBeTruthy();
+    expect(imported.body.planId).toMatch(/^businessPlan:/);
     expect(await prisma.company.count()).toBe(5);
 
     const mainCompany = await prisma.company.findUnique({ where: { email: "dealzinvoice@gmail.com" } });
@@ -592,6 +594,8 @@ describe("api", () => {
       .expect(200);
 
     expect(imported.body.company).toBe("UPDATED");
+    expect(imported.body.companyId).toBe(existingCompany.id);
+    expect(imported.body.planId).toMatch(new RegExp(`^businessPlan:${existingCompany.id}:`));
     expect(imported.body.planPeriodDateFrom).toBe("2027-06-01");
     expect(imported.body.planPeriodDateTo).toBe("2027-06-30");
     expect(await prisma.company.count({ where: { managedByCompanyId: null } })).toBe(1);

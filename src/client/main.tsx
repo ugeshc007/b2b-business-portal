@@ -342,6 +342,9 @@ type BusinessPlanProductImportResult = {
 
 type BusinessPlanScenarioImportResult = {
   company: "CREATED" | "UPDATED" | "SKIPPED";
+  companyId?: string;
+  companyName?: string;
+  planId?: string;
   planPeriodDateFrom?: string;
   planPeriodDateTo?: string;
   partnersCreated: number;
@@ -1312,14 +1315,21 @@ function App() {
           const nextSummary = await loadSummary();
           const importedCompanyName = data.rows?.find((row: BusinessPlanScenarioImportResult["rows"][number]) => row.type === "COMPANY")?.name;
           const importedCompany = (nextSummary?.companies ?? []).find((company) =>
-            (businessPlanCompanyId !== "AUTO" && company.id === businessPlanCompanyId)
+            company.id === data.companyId
+            || (businessPlanCompanyId !== "AUTO" && company.id === businessPlanCompanyId)
+            || company.name === data.companyName
+            || company.legalName === data.companyName
             || company.name === importedCompanyName
             || company.legalName === importedCompanyName
           );
+          const importedPlan = data.planId
+            ? (nextSummary?.businessPlans ?? []).find((plan) => plan.planId === data.planId || (importedCompany && businessPlanBelongsToCompany(plan, importedCompany)))
+            : undefined;
           if (importedCompany) {
             setPlanAgentCompanyId(importedCompany.id);
             setCompanyScopeId(isCompanyPortal ? importedCompany.id : "ALL");
           }
+          if (importedPlan) setEditingBusinessPlanId(importedPlan.planId);
           setWorkflowTab("uploaded");
           setActiveView("workflow");
           setBusinessPlanPreview(null);
@@ -4457,7 +4467,10 @@ function App() {
                   type="button"
                   key={company.id}
                   className={workflowSelectedCompanyId === company.id ? "secondary-button active-tab" : "secondary-button"}
-                  onClick={() => setPlanAgentCompanyId(company.id)}
+                  onClick={() => {
+                    setPlanAgentCompanyId(company.id);
+                    setBusinessPlanCompanyId(company.id);
+                  }}
                 >
                   <Building2 size={16} />
                   {company.name}
@@ -4468,7 +4481,14 @@ function App() {
             <form className="agent-task-form business-plan-agent-form" onSubmit={(event) => event.preventDefault()}>
               <label>
                 Business Plan Company
-                <select value={planAgentCompanyId} onChange={(event) => setPlanAgentCompanyId(event.target.value)} disabled={isCompanyPortal}>
+                <select
+                  value={planAgentCompanyId}
+                  onChange={(event) => {
+                    setPlanAgentCompanyId(event.target.value);
+                    if (event.target.value) setBusinessPlanCompanyId(event.target.value);
+                  }}
+                  disabled={isCompanyPortal}
+                >
                   <option value="">Select company</option>
                   {businessPlanCompanyOptions.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}
                 </select>
