@@ -545,7 +545,7 @@ function preferredInvoiceCount(min?: number, max?: number) {
   return String(min ?? max);
 }
 
-function businessPlanSalesSummary(plan: SavedBusinessPlan, targets: Target[], turnoverTargets: TurnoverTarget[], stockRows: Stock[]) {
+function businessPlanSalesSummary(plan: SavedBusinessPlan, targets: Target[], turnoverTargets: TurnoverTarget[], items: Item[]) {
   const ownerCompanyId = plan.mainCompanyId || plan.companyId;
   const planMonth = plan.planPeriodDateFrom?.slice(0, 7);
   const planSalesTarget = turnoverTargets.find((target) =>
@@ -554,7 +554,18 @@ function businessPlanSalesSummary(plan: SavedBusinessPlan, targets: Target[], tu
   const planPurchaseTarget = turnoverTargets.find((target) =>
     target.companyId === ownerCompanyId && target.type === "PURCHASE" && (!planMonth || target.month === planMonth)
   );
-  const plannedSalesValue = Number(planSalesTarget?.amount ?? plan.purchasePlan?.transactionAmountMin ?? 0);
+  const plannedPurchaseValue = Number(planPurchaseTarget?.amount ?? plan.purchasePlan?.transactionAmountMin ?? 0);
+  const pricedItems = items.filter((item) => {
+    const buyingPrice = Number(item.buyingPrice ?? item.expectedPrice ?? 0);
+    const sellingPrice = Number(item.maxPrice ?? item.expectedPrice ?? 0);
+    return Number.isFinite(buyingPrice) && Number.isFinite(sellingPrice) && buyingPrice > 0 && sellingPrice > 0;
+  });
+  const totalBuyingRate = pricedItems.reduce((sum, item) => sum + Number(item.buyingPrice ?? item.expectedPrice ?? 0), 0);
+  const totalSellingRate = pricedItems.reduce((sum, item) => sum + Number(item.maxPrice ?? item.expectedPrice ?? 0), 0);
+  const priceMultiplier = totalBuyingRate > 0 ? totalSellingRate / totalBuyingRate : 1;
+  const projectedSalesFromPurchase = plannedPurchaseValue * priceMultiplier;
+  const projectedMarginFromPurchase = projectedSalesFromPurchase - plannedPurchaseValue;
+  const plannedSalesValue = Number(planSalesTarget?.amount ?? projectedSalesFromPurchase ?? 0);
   const invoiceLimit = parseBusinessPlanInvoiceLimit(plan.salesPlan?.invoiceRuleText || plan.purchasePlan?.invoiceRuleText);
   const plannedInvoiceCount = preferredInvoiceCount(plan.salesPlan?.invoiceCountMin, plan.salesPlan?.invoiceCountMax);
   const estimatedInvoiceCount = plannedInvoiceCount === "-"
@@ -583,24 +594,13 @@ function businessPlanSalesSummary(plan: SavedBusinessPlan, targets: Target[], tu
     }, 0);
     return sum + lineMargin;
   }, 0);
-  const stockForOwner = stockRows.filter((stock) => stock.company.id === ownerCompanyId && stock.quantity > 0);
-  const stockProjectedSalesValue = stockForOwner.reduce((sum, stock) => {
-    const sellingPrice = Number(stock.item.maxPrice ?? stock.item.expectedPrice ?? 0);
-    return sum + (stock.quantity * sellingPrice);
-  }, 0);
-  const stockProjectedMargin = stockForOwner.reduce((sum, stock) => {
-    const sellingPrice = Number(stock.item.maxPrice ?? stock.item.expectedPrice ?? 0);
-    const buyingPrice = Number(stock.item.buyingPrice ?? stock.item.expectedPrice ?? 0);
-    return sum + ((sellingPrice - buyingPrice) * stock.quantity);
-  }, 0);
-  const stockQuantity = stockForOwner.reduce((sum, stock) => sum + stock.quantity, 0);
-  const projectedOrActualSalesValue = salesInvoiceValue || stockProjectedSalesValue;
-  const projectedOrActualMargin = salesInvoiceValue ? estimatedSalesMargin : stockProjectedMargin;
+  const projectedOrActualSalesValue = salesInvoiceValue || projectedSalesFromPurchase;
+  const projectedOrActualMargin = salesInvoiceValue ? estimatedSalesMargin : projectedMarginFromPurchase;
   const marginBase = salesInvoiceValue || plannedSalesValue;
 
   return {
     plannedSalesValue,
-    plannedPurchaseValue: Number(planPurchaseTarget?.amount ?? plan.purchasePlan?.transactionAmountMin ?? 0),
+    plannedPurchaseValue,
     estimatedInvoiceCount,
     invoiceLimit,
     salesInvoiceCount: completedSalesTargets.length,
@@ -609,10 +609,11 @@ function businessPlanSalesSummary(plan: SavedBusinessPlan, targets: Target[], tu
     purchaseInvoiceValue,
     estimatedSalesMargin,
     marginPercent: marginBase > 0 ? (estimatedSalesMargin / marginBase) * 100 : undefined,
-    stockProjectedSalesValue,
-    stockProjectedMargin,
-    stockMarginPercent: stockProjectedSalesValue > 0 ? (stockProjectedMargin / stockProjectedSalesValue) * 100 : undefined,
-    stockQuantity,
+    projectedSalesFromPurchase,
+    projectedMarginFromPurchase,
+    priceMultiplier,
+    pricedItemCount: pricedItems.length,
+    projectedMarginPercent: projectedSalesFromPurchase > 0 ? (projectedMarginFromPurchase / projectedSalesFromPurchase) * 100 : undefined,
     projectedOrActualSalesValue,
     projectedOrActualMargin,
     projectedSalesGap: Math.max(0, plannedSalesValue - projectedOrActualSalesValue),
@@ -4673,7 +4674,7 @@ function App() {
                   const status = businessPlanRunStatus[plan.planId] ?? "IDLE";
                   const isEditingPlan = showBusinessPlanEditor && editingBusinessPlanId === plan.planId;
                   const isExpandedPlan = expandedWorkflowPlanIds.includes(plan.planId) || isEditingPlan;
-                  const salesSummary = businessPlanSalesSummary(plan, summary?.targets ?? [], summary?.turnoverTargets ?? [], summary?.stock ?? []);
+                  const salesSummary = businessPlanSalesSummary(plan, summary?.targets ?? [], summary?.turnoverTargets ?? [], summary?.items ?? []);
                   return (
                     <article className="workflow-plan-item" key={plan.planId}>
                       <div className="workflow-plan-item-head">
@@ -4732,14 +4733,14 @@ function App() {
                               <small>{salesSummary.salesInvoiceCount ? "Actual invoice value generated" : "No sales invoice generated yet"}</small>
                             </div>
                             <div>
-                              <span>Available Stock Sales Value</span>
-                              <strong>{money(salesSummary.stockProjectedSalesValue)}</strong>
-                              <small>{salesSummary.stockQuantity} qty from stock; margin {money(salesSummary.stockProjectedMargin)} {salesSummary.stockMarginPercent === undefined ? "" : `(${percent(salesSummary.stockMarginPercent)})`}</small>
+                              <span>Projected Sales From Purchase</span>
+                              <strong>{money(salesSummary.projectedSalesFromPurchase)}</strong>
+                              <small>From {money(salesSummary.plannedPurchaseValue)} purchase using {salesSummary.pricedItemCount} product rates; margin {money(salesSummary.projectedMarginFromPurchase)} {salesSummary.projectedMarginPercent === undefined ? "" : `(${percent(salesSummary.projectedMarginPercent)})`}</small>
                             </div>
                             <div>
                               <span>Purchase To Sales</span>
                               <strong>{money(salesSummary.purchaseInvoiceValue)} / {money(salesSummary.projectedOrActualSalesValue)}</strong>
-                              <small>{salesSummary.salesInvoiceCount ? "Using actual sales invoices" : `Using projected stock value; margin ${money(salesSummary.projectedOrActualMargin)}`}</small>
+                              <small>{salesSummary.salesInvoiceCount ? "Using actual sales invoices" : `Using product master projection; margin ${money(salesSummary.projectedOrActualMargin)}`}</small>
                             </div>
                             <div>
                               <span>Plan Coverage</span>
