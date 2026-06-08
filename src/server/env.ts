@@ -6,7 +6,7 @@ const envPath = process.env.NODE_ENV === "production" && fs.existsSync(".env.pro
   ? ".env.production"
   : ".env";
 
-dotenv.config({ path: envPath });
+dotenv.config({ path: envPath, override: process.env.NODE_ENV === "production" });
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),

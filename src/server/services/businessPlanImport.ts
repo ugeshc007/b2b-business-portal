@@ -258,6 +258,24 @@ function fallbackEmail(name: string) {
   return `${slug(name)}@business-plan.local`;
 }
 
+async function resolveCompanyEmail(desiredEmail: string | undefined, fallback: string, companyId?: string) {
+  const email = (desiredEmail || fallback).trim();
+  const existing = await prisma.company.findUnique({ where: { email } });
+  if (!existing || existing.id === companyId) return email;
+  return fallback;
+}
+
+function isCompanyEmailUniqueError(error: unknown) {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") return false;
+  const target = error.meta?.target;
+  return Array.isArray(target) ? target.includes("email") : String(target ?? "").includes("email");
+}
+
+function uniqueFallbackEmail(name: string, companyId?: string) {
+  const suffix = companyId ? companyId.slice(-8) : `${Date.now()}`;
+  return `${slug(name)}-${suffix}@business-plan.local`;
+}
+
 function parseCompanyNameCell(value: unknown) {
   const raw = String(value ?? "").trim();
   const emailMatch = raw.match(/email\s*:?\s*([^;\s]+@[^;\s]+)/i);
@@ -347,19 +365,22 @@ async function upsertCompanyFromPlan(input: {
   const exactExisting = await prisma.company.findUnique({ where: { email } })
     ?? await prisma.company.findFirst({ where: { OR: [{ name: input.name }, { legalName: input.name }] } });
   const existing = exactExisting ?? (await prisma.company.findMany({
-    select: { id: true, name: true, legalName: true },
+    select: { id: true, name: true, legalName: true, email: true },
   })).find((company) => {
     const inputIdentity = normalizeIdentity(input.name);
     return inputIdentity
       && (normalizeIdentity(company.name) === inputIdentity || normalizeIdentity(company.legalName) === inputIdentity);
   });
+  const resolvedEmail = existing
+    ? await resolveCompanyEmail(input.email, existing.email, existing.id)
+    : email;
   const data = {
     name: input.name,
     legalName: input.name,
     role: input.role,
     managedByCompanyId: input.managedByCompanyId,
     location: input.address || "Address pending",
-    email,
+    email: resolvedEmail,
     active: true,
     bankName: input.bank?.bankName ?? null,
     bankBeneficiaryName: input.bank?.beneficiaryName ?? null,
@@ -368,38 +389,62 @@ async function upsertCompanyFromPlan(input: {
     bankBranch: input.bank?.branch ?? null,
   };
   if (existing) {
+    const updateData = {
+      ...data,
+      email: resolvedEmail,
+    };
     return {
       status: "UPDATED" as const,
       company: await prisma.company.update({
         where: { id: existing.id },
-        data,
+        data: updateData,
+      }).catch((error) => {
+        if (!isCompanyEmailUniqueError(error)) throw error;
+        return prisma.company.update({
+          where: { id: existing.id },
+          data: { ...updateData, email: existing.email || uniqueFallbackEmail(input.name, existing.id) },
+        });
       }),
     };
   }
   return {
     status: "CREATED" as const,
-    company: await prisma.company.create({ data }),
+    company: await prisma.company.create({ data }).catch((error) => {
+      if (!isCompanyEmailUniqueError(error)) throw error;
+      return prisma.company.create({
+        data: { ...data, email: uniqueFallbackEmail(input.name) },
+      });
+    }),
   };
 }
 
 async function updateExistingCompanyFromPlan(companyId: string, plan: BusinessPlanCompanyPreview) {
   const company = await prisma.company.findUnique({ where: { id: companyId } });
   if (!company) throw new Error("Selected company was not found. Choose an active company and try again.");
+  const email = await resolveCompanyEmail(plan.email, company.email, company.id);
+
+  const data = {
+    legalName: plan.name || company.legalName,
+    role: "BOTH" as const,
+    location: plan.address || company.location,
+    email,
+    active: true,
+    bankName: plan.bank.bankName ?? company.bankName,
+    bankBeneficiaryName: plan.bank.beneficiaryName ?? company.bankBeneficiaryName,
+    bankAccountNumber: plan.bank.accountNumber ?? company.bankAccountNumber,
+    bankIban: plan.bank.iban ?? company.bankIban,
+    bankBranch: plan.bank.branch ?? company.bankBranch,
+  };
 
   return prisma.company.update({
     where: { id: companyId },
-    data: {
-      legalName: plan.name || company.legalName,
-      role: "BOTH",
-      location: plan.address || company.location,
-      email: plan.email || company.email,
-      active: true,
-      bankName: plan.bank.bankName ?? company.bankName,
-      bankBeneficiaryName: plan.bank.beneficiaryName ?? company.bankBeneficiaryName,
-      bankAccountNumber: plan.bank.accountNumber ?? company.bankAccountNumber,
-      bankIban: plan.bank.iban ?? company.bankIban,
-      bankBranch: plan.bank.branch ?? company.bankBranch,
-    },
+    data,
+  }).catch((error) => {
+    if (!isCompanyEmailUniqueError(error)) throw error;
+    return prisma.company.update({
+      where: { id: companyId },
+      data: { ...data, email: company.email || uniqueFallbackEmail(company.name, company.id) },
+    });
   });
 }
 

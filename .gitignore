@@ -14,3 +14,4 @@ release/
 qa-output/
 qa-workflow-desktop.png
 qa-workflow-mobile.png
+logs/

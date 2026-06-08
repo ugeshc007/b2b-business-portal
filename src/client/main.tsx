@@ -1452,6 +1452,15 @@ function App() {
           setFlushProgress(100);
           setFlushStatus(`Successfully deleted ${totals.records} records and ${totals.files} files.`);
           setMessage(`Selected data flushed successfully: ${totals.records} records and ${totals.files} files deleted.`);
+          if (result.selectedCategories.includes("transactions")) {
+            setPendingImportedBusinessPlan(null);
+            setPlanAgentStatus("");
+            setBusinessPlanRunStatus({});
+            setWorkflowTodayPage(1);
+            setWorkflowOtherPage(1);
+            Object.values(businessPlanAbortControllers.current).forEach((controller) => controller.abort());
+            businessPlanAbortControllers.current = {};
+          }
           await loadSummary();
         } catch (error) {
           setFlushProgress(0);

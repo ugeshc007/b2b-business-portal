@@ -112,6 +112,7 @@ export async function flushTransactionalData(input?: FlushInput) {
       before.requirements = await tx.requirement.count();
       before.monthlyTargets = await tx.monthlyTarget.count();
       before.stockMovements = await tx.stockMovement.count();
+      before.businessPlans = await tx.appSetting.count({ where: { key: { startsWith: "businessPlan:" } } });
 
       await tx.stockMovement.deleteMany();
       await tx.ecommerceOrder.deleteMany();
@@ -127,6 +128,7 @@ export async function flushTransactionalData(input?: FlushInput) {
       await tx.requirement.deleteMany();
       await tx.monthlyTargetLine.deleteMany();
       await tx.monthlyTarget.deleteMany();
+      await tx.appSetting.deleteMany({ where: { key: { startsWith: "businessPlan:" } } });
     }
 
     if (selected.has("communicationLogs")) {
