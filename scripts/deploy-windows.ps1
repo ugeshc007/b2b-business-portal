@@ -26,6 +26,7 @@ if (![System.IO.Path]::IsPathRooted($AppDir)) {
 $AppDir = [System.IO.Path]::GetFullPath($AppDir)
 $BackupDir = Join-Path $AppDir "backups"
 $StorageDir = Join-Path $AppDir "storage"
+$pm2 = Get-Command "pm2.cmd" -ErrorAction SilentlyContinue
 
 Write-Host "B2B Business Portal Windows deploy"
 Write-Host "Source: $SourceDir"
@@ -73,6 +74,12 @@ if ($robocopyExit -gt 7) {
   throw "Robocopy failed with exit code $robocopyExit"
 }
 
+if ($pm2) {
+  Write-Host "Stopping PM2 process before dependency install and Prisma client generation."
+  & $pm2.Source stop $Pm2ProcessName
+  $LASTEXITCODE = 0
+}
+
 Push-Location $AppDir
 try {
   Copy-Item -LiteralPath ".env.production" -Destination ".env" -Force
@@ -85,13 +92,25 @@ try {
     }
   }
   npm run prisma:generate
+  if ($LASTEXITCODE -ne 0) {
+    throw "Prisma client generation failed."
+  }
   Write-Host "Running migration-safe SQLite initialization using .env.production DATABASE_URL."
   npm run db:init
+  if ($LASTEXITCODE -ne 0) {
+    throw "Database initialization failed."
+  }
   Write-Host "Skipping prisma db push for production SQLite. db:init handles safe schema setup without dropping unique indexes."
   npm run build
+  if ($LASTEXITCODE -ne 0) {
+    throw "Build failed."
+  }
   $env:NODE_ENV = "production"
   if ($env:RUN_PRODUCTION_CHECK -eq "true") {
     npm run prod:check
+    if ($LASTEXITCODE -ne 0) {
+      throw "Production readiness check failed."
+    }
   } else {
     Write-Host "Skipping strict production readiness check. Set RUN_PRODUCTION_CHECK=true to enable it."
   }
@@ -100,7 +119,6 @@ finally {
   Pop-Location
 }
 
-$pm2 = Get-Command "pm2.cmd" -ErrorAction SilentlyContinue
 if (!$pm2) {
   Write-Host "PM2 not found. Installing PM2 globally with npm."
   npm install -g pm2
@@ -132,12 +150,11 @@ module.exports = {
     $listener = Get-NetTCPConnection -LocalPort $appPort -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($listener) {
       $listenerProcess = Get-CimInstance Win32_Process -Filter "ProcessId = $($listener.OwningProcess)" -ErrorAction SilentlyContinue
-      $managedByPm2 = (& $pm2.Source jlist | ConvertFrom-Json | Where-Object { $_.pid -eq $listener.OwningProcess -and $_.name -eq $Pm2ProcessName } | Select-Object -First 1)
-      if (!$managedByPm2 -and $listenerProcess -and $listenerProcess.Name -eq "node.exe") {
+      if ($listenerProcess -and $listenerProcess.Name -eq "node.exe") {
         Write-Host "Stopping existing Node listener on port $appPort before PM2 start."
         Stop-Process -Id $listener.OwningProcess -Force
         Start-Sleep -Seconds 2
-      } elseif (!$managedByPm2) {
+      } else {
         throw "Port $appPort is already in use by process $($listener.OwningProcess). Stop it before PM2 start."
       }
     }
