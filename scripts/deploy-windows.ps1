@@ -77,6 +77,13 @@ Push-Location $AppDir
 try {
   Copy-Item -LiteralPath ".env.production" -Destination ".env" -Force
   npm ci
+  if ($LASTEXITCODE -ne 0) {
+    Write-Warning "npm ci failed, falling back to npm install for optional platform dependency lockfile mismatch."
+    npm install
+    if ($LASTEXITCODE -ne 0) {
+      throw "Dependency install failed with npm ci and npm install."
+    }
+  }
   npm run prisma:generate
   Write-Host "Running migration-safe SQLite initialization using .env.production DATABASE_URL."
   npm run db:init
