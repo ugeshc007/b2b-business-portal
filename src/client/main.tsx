@@ -471,6 +471,20 @@ function percent(value: string | number | undefined) {
   return `${normalized.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
 }
 
+function dateInputDate(value?: string | null) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+  const slashMatch = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slashMatch) {
+    const day = slashMatch[1].padStart(2, "0");
+    const month = slashMatch[2].padStart(2, "0");
+    return `${slashMatch[3]}-${month}-${day}`;
+  }
+  return "";
+}
+
 function businessPlanPartnerLines(
   partners: Array<{ name: string; allocationPercent?: number; email?: string; address?: string }> = [],
   allocations?: Array<{ name: string; allocationPercent?: number }>
@@ -2261,8 +2275,8 @@ function App() {
     const transactionPercent = Number(form.get("transactionPercent") || 0);
     const purchaseInvoiceRuleText = String(form.get("purchaseInvoiceRuleText") ?? "").trim();
     const salesInvoiceRuleText = String(form.get("salesInvoiceRuleText") ?? "").trim();
-    const planPeriodDateFrom = String(form.get("planPeriodDateFrom") ?? "").trim();
-    const planPeriodDateTo = String(form.get("planPeriodDateTo") ?? "").trim();
+    const planPeriodDateFrom = String(form.get("planPeriodDateFrom") ?? "").trim() || dateInputDate(selectedWorkflowBusinessPlan.planPeriodDateFrom);
+    const planPeriodDateTo = String(form.get("planPeriodDateTo") ?? "").trim() || dateInputDate(selectedWorkflowBusinessPlan.planPeriodDateTo);
     const rowPartners = (prefix: string, role: "BUYER" | "SELLER") => {
       const names = form.getAll(`${prefix}Name`).map((value) => String(value ?? "").trim());
       const allocations = form.getAll(`${prefix}Allocation`).map((value) => String(value ?? "").trim());
@@ -2304,8 +2318,8 @@ function App() {
           salesTargetAmount: Number.isFinite(salesTargetAmount) ? salesTargetAmount : undefined,
           plan: {
             ...selectedWorkflowBusinessPlan,
-            planPeriodDateFrom: planPeriodDateFrom || undefined,
-            planPeriodDateTo: planPeriodDateTo || undefined,
+            planPeriodDateFrom: planPeriodDateFrom || selectedWorkflowBusinessPlan.planPeriodDateFrom || undefined,
+            planPeriodDateTo: planPeriodDateTo || selectedWorkflowBusinessPlan.planPeriodDateTo || undefined,
             purchasePlan: {
               ...selectedWorkflowBusinessPlan.purchasePlan,
               revenueTargetText: purchaseTargetAmount ? `AED ${purchaseTargetAmount}` : selectedWorkflowBusinessPlan.purchasePlan?.revenueTargetText,
@@ -4833,11 +4847,11 @@ function App() {
                             <form className="business-plan-edit-form" key={`edit-${plan.planId}-${planAgentMonth}`} onSubmit={saveBusinessPlanEdits}>
                               <label>
                                 Plan Period From
-                                <input name="planPeriodDateFrom" type="date" defaultValue={plan.planPeriodDateFrom ?? ""} />
+                                <input name="planPeriodDateFrom" type="date" defaultValue={dateInputDate(plan.planPeriodDateFrom)} />
                               </label>
                               <label>
                                 Plan Period To
-                                <input name="planPeriodDateTo" type="date" defaultValue={plan.planPeriodDateTo ?? ""} />
+                                <input name="planPeriodDateTo" type="date" defaultValue={dateInputDate(plan.planPeriodDateTo)} />
                               </label>
                               <label>
                                 Purchase Target For Plan Period
