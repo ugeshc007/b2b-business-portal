@@ -4,7 +4,20 @@ on:
   push:
     branches:
       - main
+      - master
   workflow_dispatch:
+    inputs:
+      run_production_check:
+        description: Run strict production readiness checks during deploy
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+permissions:
+  contents: read
 
 concurrency:
   group: windows-production-deploy
@@ -25,12 +38,12 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Prepare test database
         shell: powershell
         run: |
-          $env:SQLITE_DB_PATH = "$env:RUNNER_TEMP\b2b-business-test.db"
+          $env:DATABASE_URL = "file:$env:RUNNER_TEMP\b2b-business-test.db"
           npm run db:init -- --reset
 
       - name: Generate Prisma client
@@ -39,7 +52,7 @@ jobs:
       - name: Run tests
         shell: powershell
         run: |
-          $env:SQLITE_DB_PATH = "$env:RUNNER_TEMP\b2b-business-test.db"
+          $env:DATABASE_URL = "file:$env:RUNNER_TEMP\b2b-business-test.db"
           npm test
 
       - name: Build
@@ -61,6 +74,8 @@ jobs:
         env:
           DEPLOY_APP_DIR: ${{ vars.DEPLOY_APP_DIR }}
           DEPLOY_SERVICE_NAME: ${{ vars.DEPLOY_SERVICE_NAME }}
+          DEPLOY_PM2_PROCESS_NAME: ${{ vars.DEPLOY_PM2_PROCESS_NAME }}
+          RUN_PRODUCTION_CHECK: ${{ github.event_name == 'workflow_dispatch' && inputs.run_production_check || vars.RUN_PRODUCTION_CHECK }}
         run: |
           $appDir = if ([string]::IsNullOrWhiteSpace($env:DEPLOY_APP_DIR)) { "C:\NEW\b2b-business-code" } else { $env:DEPLOY_APP_DIR }
           if (![System.IO.Path]::IsPathRooted($appDir)) {

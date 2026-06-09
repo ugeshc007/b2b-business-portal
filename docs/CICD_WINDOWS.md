@@ -70,7 +70,11 @@ Add:
 ```text
 DEPLOY_APP_DIR=C:\NEW\b2b-business-code
 DEPLOY_SERVICE_NAME=B2BBusinessPortal
+DEPLOY_PM2_PROCESS_NAME=B2BBusinessPortal
+RUN_PRODUCTION_CHECK=false
 ```
+
+Set `RUN_PRODUCTION_CHECK=true` after production has a real HTTPS `APP_ORIGIN` and Gmail production settings. The manual workflow run also has an input to enable the check for one deployment.
 
 ## 4. First Deployment
 
@@ -89,9 +93,10 @@ The workflow will:
 - copy latest code to `C:\NEW\b2b-business-code`
 - install dependencies
 - generate Prisma client
-- initialize database columns
+- initialize database columns using the SQLite-safe `db:init` script
 - build frontend
-- restart `B2BBusinessPortal` service if it exists
+- optionally run strict production readiness checks
+- start or restart the `B2BBusinessPortal` PM2 process
 
 ## 5. Run As Windows Service
 
