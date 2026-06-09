@@ -120,7 +120,7 @@ if ($pm2) {
           throw "Port $appPort is already in use by process $($listener.OwningProcess). Stop it before PM2 start."
         }
       }
-      & $pm2.Source start npm --name $Pm2ProcessName -- run start:prod
+      & $pm2.Source start npm.cmd --name $Pm2ProcessName --interpreter none -- run start:prod
       Write-Host "PM2 process started: $Pm2ProcessName"
     }
     & $pm2.Source save
