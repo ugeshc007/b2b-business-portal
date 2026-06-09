@@ -323,6 +323,55 @@ function parsePartnerList(value: unknown, role: "BUYER" | "SELLER") {
   return partners;
 }
 
+function dedupePartners(partners: BusinessPlanPartnerPreview[]) {
+  const byName = new Map<string, BusinessPlanPartnerPreview>();
+  for (const partner of partners) {
+    const key = normalizeIdentity(partner.name);
+    if (!key) continue;
+    const existing = byName.get(key);
+    byName.set(key, existing ? { ...existing, ...partner, role: mergePartnerRole(existing.role, partner.role) } : partner);
+  }
+  return [...byName.values()];
+}
+
+function parseCustomerRule(value: unknown, companies: BusinessPlanCompanyPreview[], partnerBanks: Array<{ companyName: string; bank: BusinessPlanCompanyPreview["bank"] }>) {
+  const raw = cleanText(value);
+  const partners: BusinessPlanPartnerPreview[] = [];
+
+  for (const match of raw.matchAll(/index\s*no\s*:?\s*([0-9,\sand]+)/gi)) {
+    const indexes = [...match[1].matchAll(/\d+/g)].map((item) => item[0]);
+    for (const index of indexes) {
+      const company = companies.find((item) => item.index === index);
+      if (!company?.name) continue;
+      partners.push({
+        name: company.name,
+        role: "BUYER",
+        email: company.email,
+        address: company.address,
+        bank: findBankForPartner(company.name, partnerBanks),
+      });
+    }
+  }
+
+  const retailMatch = raw.match(/retail customer\s*:?\s*([^;]+)/i);
+  if (retailMatch) {
+    const retailNames = retailMatch[1]
+      .split(/,/g)
+      .map((name) => cleanText(name.replace(/^customer\s*:/i, "")))
+      .filter((name) => name && !/^email\b/i.test(name));
+    const emailMatch = raw.match(/fam(?:o|co)\s+mobile[^:]*:\s*([^\s;]+@[^\s;]+)/i);
+    for (const name of retailNames) {
+      partners.push({
+        name,
+        role: "BUYER",
+        email: /fam(?:o|co)\s+mobile/i.test(name) ? emailMatch?.[1] : undefined,
+      });
+    }
+  }
+
+  return dedupePartners(partners.length ? partners : parsePartnerList(value, "BUYER"));
+}
+
 function parseAllocationList(value: unknown, role: "BUYER" | "SELLER") {
   const raw = cleanMultilineText(value);
   if (!raw) return [];
@@ -677,18 +726,19 @@ export function parseBusinessPlanWorkbook(buffer: Buffer): BusinessPlanImportPre
   }
 
   const purchasePlan = companies.find((company) => company.index || /purchase/i.test(company.productSpecification ?? ""));
-  const salesPlan = companies.find((company) => /sales/i.test(company.productSpecification ?? "") || Boolean(company.customerRule && !company.revenueTargetMin));
+  const detectedSalesPlan = companies.find((company) => /sales/i.test(company.productSpecification ?? "") || Boolean(company.customerRule && !company.revenueTargetMin));
+  const salesPlan = detectedSalesPlan ?? (purchasePlan?.customerRule ? purchasePlan : undefined);
   const mainCompany = purchasePlan ?? salesPlan ?? companies[0];
   const partnerBanks = [
     ...parseBankDetailBlocks(purchasePlan?.bank.raw),
     ...parseBankDetailBlocks(salesPlan?.bank.raw),
   ];
   const purchaseVendors = parseAllocationList(purchasePlan?.vendorRule, "SELLER");
-  const salesCustomers = parsePartnerList(salesPlan?.customerRule, "BUYER").map((partner) => ({
+  const salesCustomers = parseCustomerRule(salesPlan?.customerRule, companies, partnerBanks).map((partner) => ({
     ...partner,
     bank: findBankForPartner(partner.name, partnerBanks),
   }));
-  const salesAllocations = parseAllocationList(salesPlan?.vendorRule, "BUYER");
+  const salesAllocations = detectedSalesPlan ? parseAllocationList(detectedSalesPlan.vendorRule, "BUYER") : [];
   const salesCustomerCount = new Set([...salesCustomers, ...salesAllocations].map((customer) => normalizeIdentity(customer.name)).filter(Boolean)).size;
   const scenario = mainCompany ? {
     mainCompany,

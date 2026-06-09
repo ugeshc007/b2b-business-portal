@@ -473,7 +473,8 @@ describe("api", () => {
     expect(preview.body.fieldMappings[0].detected).toBe(true);
     expect(preview.body.fieldMappings[1].detected).toBe(true);
     expect(preview.body.products[0].sku).toBe("AMAZON-UAE-100");
-    expect(preview.body.counts.checklistItems).toBe(0);
+    expect(preview.body.counts.salesCustomers).toBe(1);
+    expect(preview.body.counts.checklistItems).toBe(1);
     expect(preview.body.companies[0].email).toBe("example@example.com");
     expect(preview.body.companies[0].revenueTargetMin).toBe(2000000);
     expect(preview.body.products[0].title).toBe("Amazon UAE - 100");
