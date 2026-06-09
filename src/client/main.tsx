@@ -1477,7 +1477,7 @@ function App() {
           setBusinessScenarioImportResult(data);
           setBusinessImportProgress(100);
           setBusinessImportStatus(`Import complete: ${data.partnersCreated} partners created, ${data.partnersUpdated} partners updated, ${data.rulesSaved} rule set saved.`);
-          setMessage(`Business plan imported: ${data.partnersCreated} partners created, ${data.partnersUpdated} partners updated.`);
+          setMessage(`Business plan imported: ${data.partnersCreated} partners created, ${data.partnersUpdated} partners updated, ${data.rulesSaved} workflow saved.`);
           const nextSummary = await loadSummary().catch(() => null);
           const importedCompanyName = data.rows?.find((row: BusinessPlanScenarioImportResult["rows"][number]) => row.type === "COMPANY")?.name;
           const importedCompany = (nextSummary?.companies ?? []).find((company) =>
@@ -1510,11 +1510,15 @@ function App() {
           const importedPlan = data.planId
             ? (nextSummary?.businessPlans ?? []).find((plan) => plan.planId === data.planId || (importedCompany && businessPlanBelongsToCompany(plan, importedCompany)))
             : undefined;
-          if (importedCompany) {
-            setPlanAgentCompanyId(importedCompany.id);
-            setCompanyScopeId(isCompanyPortal ? importedCompany.id : "ALL");
+          if (fallbackCompanyId) {
+            setPlanAgentCompanyId(fallbackCompanyId);
+            setBusinessPlanCompanyId(fallbackCompanyId);
+            setCompanyScopeId(isCompanyPortal ? fallbackCompanyId : "ALL");
           }
-          if (importedPlan) setEditingBusinessPlanId(importedPlan.planId);
+          if (importedPlan || data.planId) {
+            setEditingBusinessPlanId(importedPlan?.planId ?? data.planId);
+            setExpandedWorkflowPlanIds((current) => current.includes(importedPlan?.planId ?? data.planId) ? current : [...current, importedPlan?.planId ?? data.planId]);
+          }
           setWorkflowTab("uploaded");
           setActiveView("workflow");
           setBusinessPlanPreview(null);
