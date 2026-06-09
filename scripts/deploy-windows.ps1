@@ -104,25 +104,38 @@ if ($pm2) {
   Push-Location $AppDir
   try {
     $env:NODE_ENV = "production"
-    $existingPm2 = & $pm2.Source jlist | ConvertFrom-Json | Where-Object { $_.name -eq $Pm2ProcessName } | Select-Object -First 1
-    if ($existingPm2) {
-      & $pm2.Source restart $Pm2ProcessName --update-env
-      Write-Host "PM2 process restarted: $Pm2ProcessName"
-    } else {
-      $listener = Get-NetTCPConnection -LocalPort $appPort -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
-      if ($listener) {
-        $listenerProcess = Get-CimInstance Win32_Process -Filter "ProcessId = $($listener.OwningProcess)" -ErrorAction SilentlyContinue
-        if ($listenerProcess -and $listenerProcess.Name -eq "node.exe") {
-          Write-Host "Stopping existing Node listener on port $appPort before first PM2 start."
-          Stop-Process -Id $listener.OwningProcess -Force
-          Start-Sleep -Seconds 2
-        } else {
-          throw "Port $appPort is already in use by process $($listener.OwningProcess). Stop it before PM2 start."
-        }
-      }
-      & $pm2.Source start npm.cmd --name $Pm2ProcessName --interpreter none -- run start:prod
-      Write-Host "PM2 process started: $Pm2ProcessName"
+    $ecosystemPath = Join-Path $AppDir "ecosystem.config.cjs"
+    $escapedAppDir = $AppDir.Replace("\", "\\")
+    $escapedName = $Pm2ProcessName.Replace("'", "\'")
+    @"
+module.exports = {
+  apps: [{
+    name: '$escapedName',
+    cwd: '$escapedAppDir',
+    script: 'node_modules/tsx/dist/cli.mjs',
+    args: 'src/server/index.ts',
+    interpreter: 'node',
+    env: {
+      NODE_ENV: 'production'
     }
+  }]
+};
+"@ | Set-Content -LiteralPath $ecosystemPath -Encoding UTF8
+
+    $listener = Get-NetTCPConnection -LocalPort $appPort -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($listener) {
+      $listenerProcess = Get-CimInstance Win32_Process -Filter "ProcessId = $($listener.OwningProcess)" -ErrorAction SilentlyContinue
+      $managedByPm2 = (& $pm2.Source jlist | ConvertFrom-Json | Where-Object { $_.pid -eq $listener.OwningProcess -and $_.name -eq $Pm2ProcessName } | Select-Object -First 1)
+      if (!$managedByPm2 -and $listenerProcess -and $listenerProcess.Name -eq "node.exe") {
+        Write-Host "Stopping existing Node listener on port $appPort before PM2 start."
+        Stop-Process -Id $listener.OwningProcess -Force
+        Start-Sleep -Seconds 2
+      } elseif (!$managedByPm2) {
+        throw "Port $appPort is already in use by process $($listener.OwningProcess). Stop it before PM2 start."
+      }
+    }
+    & $pm2.Source startOrRestart $ecosystemPath --update-env
+    Write-Host "PM2 process started or restarted: $Pm2ProcessName"
     & $pm2.Source save
     Write-Host "PM2 process list saved."
   }
