@@ -81,6 +81,47 @@ describe("api", () => {
     expect(summary.body.overview.stockByCompany).toEqual([]);
   });
 
+  it("enables a company portal user and allows that company to login", async () => {
+    await createUser("admin@example.com", "ChangeMe123!", "Admin", "ADMIN");
+    const company = await createCompany({
+      name: "Famco Mobile",
+      legalName: "Famco Mobile and Electronics",
+      role: "BOTH",
+      location: "Dubai, UAE",
+      email: "famco@example.com",
+    });
+    const adminLogin = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "admin@example.com", password: "ChangeMe123!" })
+      .expect(200);
+
+    const portal = await request(app)
+      .post(`/api/catalog/companies/${company.id}/portal-user`)
+      .set("Authorization", `Bearer ${adminLogin.body.token}`)
+      .send({})
+      .expect(201);
+
+    expect(portal.body.user.email).toBe("famco@example.com");
+    expect(portal.body.user.companyId).toBe(company.id);
+    expect(portal.body.temporaryPassword).toMatch(/^Portal#/);
+
+    const companyLogin = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "famco@example.com", password: portal.body.temporaryPassword })
+      .expect(200);
+    expect(companyLogin.body.user.role).toBe("COMPANY_USER");
+    expect(companyLogin.body.user.companyId).toBe(company.id);
+
+    const summary = await request(app)
+      .get("/api/dashboard/summary")
+      .set("Authorization", `Bearer ${adminLogin.body.token}`)
+      .expect(200);
+    expect(summary.body.portalUsers).toEqual([
+      expect.objectContaining({ email: "famco@example.com", companyId: company.id, role: "COMPANY_USER" }),
+    ]);
+    expect(JSON.stringify(summary.body.portalUsers)).not.toContain("passwordHash");
+  });
+
   it("does not send HTTPS-only browser isolation headers on HTTP deployments", async () => {
     const response = await request(app).get("/api/health").expect(200);
     expect(response.headers["cross-origin-opener-policy"]).toBeUndefined();

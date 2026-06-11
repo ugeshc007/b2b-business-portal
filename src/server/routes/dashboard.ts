@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../db";
-import { requireAuth } from "../middleware";
+import { AuthRequest, requireAuth } from "../middleware";
 import { getStockMovementReport } from "../services/stockLedger";
 
 export const dashboardRouter = Router();
@@ -55,10 +55,15 @@ function parseBusinessPlanSetting(
   }
 }
 
-dashboardRouter.get("/summary", async (_req, res, next) => {
+dashboardRouter.get("/summary", async (req: AuthRequest, res, next) => {
   try {
-    const [companies, items, targets, requirements, quotations, orders, invoices, emails, stock, emailIntegrations, turnoverTargets, agentAuditLogs, ecommerceOrders, stockMovementReport, businessPlanSettings] = await Promise.all([
+    let [companies, portalUsers, items, targets, requirements, quotations, orders, invoices, emails, stock, emailIntegrations, turnoverTargets, agentAuditLogs, ecommerceOrders, stockMovementReport, businessPlanSettings] = await Promise.all([
       prisma.company.findMany({ include: { managedByCompany: true } }),
+      prisma.user.findMany({
+        where: { role: "COMPANY_USER" },
+        select: { id: true, email: true, name: true, role: true, companyId: true, createdAt: true },
+        orderBy: { createdAt: "asc" },
+      }),
       prisma.item.findMany(),
       prisma.monthlyTarget.findMany({
         include: {
@@ -89,6 +94,34 @@ dashboardRouter.get("/summary", async (_req, res, next) => {
         orderBy: { updatedAt: "desc" },
       }),
     ]);
+    const scopedCompanyId = req.userRole === "COMPANY_USER" ? req.userCompanyId : null;
+    if (scopedCompanyId) {
+      const visibleCompanyIds = new Set(companies
+        .filter((company) => company.id === scopedCompanyId || company.managedByCompanyId === scopedCompanyId)
+        .map((company) => company.id));
+      const visibleCompanyEmails = new Set(companies
+        .filter((company) => visibleCompanyIds.has(company.id))
+        .map((company) => company.email));
+      companies = companies.filter((company) => visibleCompanyIds.has(company.id));
+      portalUsers = portalUsers.filter((user) => user.companyId === scopedCompanyId);
+      targets = targets.filter((target) => visibleCompanyIds.has(target.buyerCompanyId) || visibleCompanyIds.has(target.sellerCompanyId));
+      const visibleTargetIds = new Set(targets.map((target) => target.id));
+      requirements = requirements.filter((requirement) => visibleCompanyIds.has(requirement.buyerCompanyId) || visibleCompanyIds.has(requirement.sellerCompanyId));
+      quotations = quotations.filter((quotation) => visibleCompanyIds.has(quotation.buyerCompanyId) || visibleCompanyIds.has(quotation.sellerCompanyId));
+      orders = orders.filter((order) => visibleCompanyIds.has(order.buyerCompanyId) || visibleCompanyIds.has(order.sellerCompanyId));
+      invoices = invoices.filter((invoice) => visibleCompanyIds.has(invoice.buyerCompanyId) || visibleCompanyIds.has(invoice.sellerCompanyId));
+      emails = emails.filter((email) => visibleCompanyEmails.has(email.fromEmail) || visibleCompanyEmails.has(email.toEmail));
+      stock = stock.filter((row) => visibleCompanyIds.has(row.companyId));
+      emailIntegrations = emailIntegrations.filter((integration) => visibleCompanyIds.has(integration.companyId));
+      turnoverTargets = turnoverTargets.filter((target) => visibleCompanyIds.has(target.companyId));
+      agentAuditLogs = agentAuditLogs.filter((log) => log.targetId && visibleTargetIds.has(log.targetId));
+      ecommerceOrders = ecommerceOrders.filter((order) => visibleCompanyIds.has(order.buyerCompanyId) || visibleCompanyIds.has(order.sellerCompanyId));
+      stockMovementReport = stockMovementReport.filter((row) => visibleCompanyIds.has(row.companyId));
+      businessPlanSettings = businessPlanSettings.filter((setting) => {
+        const [, companyId = setting.key] = setting.key.split(":");
+        return visibleCompanyIds.has(companyId);
+      });
+    }
     const businessPlans = businessPlanSettings.map((setting) => parseBusinessPlanSetting(setting, companies));
 
     const invoiceTotal = invoices.reduce((sum, invoice) => sum.plus(invoice.total), new Prisma.Decimal(0));
@@ -159,6 +192,7 @@ dashboardRouter.get("/summary", async (_req, res, next) => {
         lastUpdatedAt: new Date(),
       },
       companies,
+      portalUsers,
       items,
       targets: targets.map((target) => {
         const invoice = target.requirements

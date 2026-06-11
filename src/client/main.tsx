@@ -158,6 +158,8 @@ type ConfirmationToast = {
   typedPhrase?: string;
   onConfirm: () => Promise<void>;
 };
+type AuthUser = { id: string; email: string; name: string; role: "ADMIN" | "COMPANY_USER" | "FINANCE" | "VIEWER"; companyId?: string | null };
+type PortalUser = AuthUser & { createdAt: string };
 type SavedBusinessPlan = {
   planId: string;
   companyId: string;
@@ -210,6 +212,7 @@ type Summary = {
   turnoverTargets: TurnoverTarget[];
   businessPlans: SavedBusinessPlan[];
   ecommerceOrders: EcommerceOrder[];
+  portalUsers: PortalUser[];
 };
 
 type ReportsData = {
@@ -783,6 +786,16 @@ function messageTitle(message: string) {
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem("b2b-token") ?? "");
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
+    const stored = localStorage.getItem("b2b-user");
+    if (!stored) return null;
+    try {
+      return JSON.parse(stored) as AuthUser;
+    } catch {
+      localStorage.removeItem("b2b-user");
+      return null;
+    }
+  });
   const [email, setEmail] = useState("admin@example.com");
   const [password, setPassword] = useState("ChangeMe123!");
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -954,7 +967,9 @@ function App() {
     }
     if (response.status === 401) {
       localStorage.removeItem("b2b-token");
+      localStorage.removeItem("b2b-user");
       setToken("");
+      setCurrentUser(null);
     }
     if (!response.ok) throw new Error(data.error ?? "Request failed");
     return data as T;
@@ -979,6 +994,7 @@ function App() {
         turnoverTargets: nextSummary.turnoverTargets ?? [],
         businessPlans: nextSummary.businessPlans ?? [],
         ecommerceOrders: nextSummary.ecommerceOrders ?? [],
+        portalUsers: nextSummary.portalUsers ?? [],
       });
       return nextSummary;
     } finally {
@@ -1067,9 +1083,12 @@ function App() {
 
   useEffect(() => {
     if (!summary) return;
-    const portalCompany = portalCompanyName
-      ? summary.companies.find((company) => company.name.toLowerCase() === portalCompanyName.toLowerCase())
+    const userCompany = currentUser?.role === "COMPANY_USER" && currentUser.companyId
+      ? summary.companies.find((company) => company.id === currentUser.companyId)
       : undefined;
+    const portalCompany = userCompany ?? (portalCompanyName
+      ? summary.companies.find((company) => company.name.toLowerCase() === portalCompanyName.toLowerCase())
+      : undefined);
     const defaultCompanyId = portalCompany?.id || summary.companies[0]?.id || "";
     const defaultOwnerCompanyId = portalCompany?.id || summary.companies.find((company) => !company.managedByCompanyId)?.id || defaultCompanyId;
     if (portalCompany) {
@@ -1093,7 +1112,7 @@ function App() {
     setTargetItemId((current) => current || summary.items[0]?.id || "");
     setSelectedInvoiceId((current) => current || summary.invoices[0]?.id || "");
     setEmailCompanyId((current) => portalCompany?.id || current || defaultCompanyId);
-  }, [summary]);
+  }, [summary, currentUser?.companyId, currentUser?.role]);
 
   useEffect(() => {
     if (!summary || !profileCompanyId) return;
@@ -1153,13 +1172,23 @@ function App() {
       }).then(async (response) => {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error ?? "Login failed");
-        return data as { token: string };
+        return data as { token: string; user: AuthUser };
       });
       localStorage.setItem("b2b-token", session.token);
+      localStorage.setItem("b2b-user", JSON.stringify(session.user));
+      setCurrentUser(session.user);
       setToken(session.token);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Login failed");
     }
+  }
+
+  function logout() {
+    localStorage.removeItem("b2b-token");
+    localStorage.removeItem("b2b-user");
+    setCurrentUser(null);
+    setToken("");
+    setCompanyScopeId("ALL");
   }
 
   async function saveCompanyProfile(event: React.FormEvent) {
@@ -1336,6 +1365,30 @@ function App() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function enablePortalForCompany(company: Company) {
+    setConfirmationToast({
+      title: "Enable company portal?",
+      message: `Create a company-user login for ${company.name} using ${company.email}. They can log in to upload workflows, configure email, send POs, and receive invoices under their own scope.`,
+      confirmLabel: "Enable Portal",
+      onConfirm: async () => {
+        setLoading(true);
+        try {
+          const result = await request<{ created: boolean; temporaryPassword: string | null; user: PortalUser }>(`/api/catalog/companies/${company.id}/portal-user`, {
+            method: "POST",
+            body: JSON.stringify({ email: company.email, name: company.name }),
+          });
+          const passwordText = result.temporaryPassword ? ` Temporary password: ${result.temporaryPassword}` : " Existing password was kept.";
+          setMessage(`Portal ${result.created ? "enabled" : "already enabled"} for ${company.name}. Login: ${result.user.email}.${passwordText}`);
+          await loadSummary();
+        } catch (error) {
+          setMessage(error instanceof Error ? error.message : "Could not enable company portal");
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
   }
 
   async function previewBusinessPlanImport(event: React.FormEvent) {
@@ -1527,7 +1580,7 @@ function App() {
           if (fallbackCompanyId) {
             setPlanAgentCompanyId(fallbackCompanyId);
             setBusinessPlanCompanyId(fallbackCompanyId);
-            setCompanyScopeId(isCompanyPortal ? fallbackCompanyId : "ALL");
+            setCompanyScopeId(isPortalScopeLocked ? fallbackCompanyId : "ALL");
           }
           if (importedPlan || data.planId) {
             setEditingBusinessPlanId(importedPlan?.planId ?? data.planId);
@@ -1822,7 +1875,7 @@ function App() {
     setTargetNotes(target.notes ?? "");
     setWorkflowPeriodType(target.periodType ?? (target.targetDate ? "DAILY" : "MONTHLY"));
     setWorkflowDirection(target.direction ?? "PURCHASE");
-    const companyId = isCompanyPortal
+    const companyId = isPortalScopeLocked
       ? scopedCompanies[0]?.id ?? target.buyerCompany.id
       : target.direction === "SALES" ? target.sellerCompany.id : target.buyerCompany.id;
     setWorkflowCompanyId(companyId);
@@ -2903,6 +2956,8 @@ function App() {
     });
   }
 
+  const companyUserCompanyId = currentUser?.role === "COMPANY_USER" ? currentUser.companyId ?? "" : "";
+  const isPortalScopeLocked = isCompanyPortal || Boolean(companyUserCompanyId);
   const activeCompanies = (summary?.companies ?? []).filter((company) => company.active !== false);
   const portalOwnerCompany = companyScopeId === "ALL" ? null : (summary?.companies ?? []).find((company) => company.id === companyScopeId) ?? null;
   const scopedCompanies = companyScopeId === "ALL"
@@ -2998,11 +3053,13 @@ function App() {
   const filteredStockRows = (reports?.stock.rows ?? []).filter((row) =>
     reportProductId === "ALL" || (summary?.items ?? []).find((item) => item.id === reportProductId)?.sku === row.sku
   );
-  const visibleCompanyOptions = isCompanyPortal ? scopedCompanies : activeCompanies;
+  const visibleCompanyOptions = isPortalScopeLocked ? scopedCompanies : activeCompanies;
   const businessPlanOwnerOptions = visibleCompanyOptions.filter((company) => !company.managedByCompanyId);
   const businessPlanCompanyOptions = businessPlanOwnerOptions.length ? businessPlanOwnerOptions : visibleCompanyOptions;
   const sidebarCompanyLinks = summary
-    ? activeCompanies.filter((company) => !company.managedByCompanyId)
+    ? isPortalScopeLocked
+      ? activeCompanies.filter((company) => company.id === companyScopeId)
+      : activeCompanies.filter((company) => !company.managedByCompanyId)
     : [];
   const workflowSelectedCompanyId = planAgentCompanyId || businessPlanCompanyOptions[0]?.id || "";
   const workflowSelectedCompany = businessPlanCompanyOptions.find((company) => company.id === workflowSelectedCompanyId);
@@ -3030,7 +3087,11 @@ function App() {
     : activeCompanies;
   const allCustomerCompanyOptions = partnerCompanyOptions.filter(canBeCustomer);
   const allVendorCompanyOptions = partnerCompanyOptions.filter(canBeVendor);
-  const settingsCompanyOptions = !isCompanyPortal || companyScopeId === "ALL" || !portalOwnerCompany
+  const portalUserByCompanyId = (summary?.portalUsers ?? []).reduce((map, user) => {
+    if (user.companyId) map.set(user.companyId, user);
+    return map;
+  }, new Map<string, PortalUser>());
+  const settingsCompanyOptions = !isPortalScopeLocked || companyScopeId === "ALL" || !portalOwnerCompany
     ? summary?.companies ?? []
     : (summary?.companies ?? []).filter((company) => isPartnerForCompany(company, portalOwnerCompany.id));
   const settingsCompaniesForTab = companyPartnerTab === "companies"
@@ -3060,9 +3121,9 @@ function App() {
         : `after ${Number(agentInvoiceDelay) || 0} minute${Number(agentInvoiceDelay) === 1 ? "" : "s"}`
       : "manual",
   };
-  const portalDisplayName = portalCompanyName === "Dealzarabia" ? "Dealz" : portalCompanyName;
-  const portalTitle = isCompanyPortal ? `${portalDisplayName} Portal` : "Admin Portal";
-  const portalSubtitle = isCompanyPortal
+  const portalDisplayName = portalOwnerCompany?.name || currentUser?.name || (portalCompanyName === "Dealzarabia" ? "Dealz" : portalCompanyName) || "Company";
+  const portalTitle = isPortalScopeLocked ? `${portalDisplayName} Portal` : "Admin Portal";
+  const portalSubtitle = isPortalScopeLocked
     ? `${portalDisplayName} data and workflows only.`
     : "All company data in one admin view.";
 
@@ -3105,13 +3166,15 @@ function App() {
               {company.name}
             </button>
           ))}
-          <button
-            type="button"
-            className={companyScopeId === "ALL" ? "active-portal-link" : ""}
-            onClick={() => setCompanyScopeId("ALL")}
-          >
-            Admin
-          </button>
+          {!isPortalScopeLocked && (
+            <button
+              type="button"
+              className={companyScopeId === "ALL" ? "active-portal-link" : ""}
+              onClick={() => setCompanyScopeId("ALL")}
+            >
+              Admin
+            </button>
+          )}
         </div>
         <nav>
           <NavButton icon={<Building2 size={18} />} label="Overview" view="overview" activeView={activeView} onSelect={setActiveView} />
@@ -3130,7 +3193,7 @@ function App() {
             <p>{portalSubtitle}</p>
           </div>
           <div className="actions">
-            {!isCompanyPortal && (
+            {!isPortalScopeLocked && (
               <label className="scope-control">
                 Company Scope
                 <select value={companyScopeId} onChange={(event) => setCompanyScopeId(event.target.value)}>
@@ -3142,7 +3205,7 @@ function App() {
               </label>
             )}
             <button type="button" onClick={loadSummary} disabled={loading}><RefreshCcw size={17} /> Refresh</button>
-            <button type="button" onClick={() => { localStorage.removeItem("b2b-token"); setToken(""); }}>Logout</button>
+            <button type="button" onClick={logout}>Logout</button>
           </div>
         </header>
 
@@ -3455,6 +3518,7 @@ function App() {
                 </div>
                 {settingsCompaniesForTab.map((company) => {
                   const isExpanded = expandedCompanyIds.includes(company.id);
+                  const portalUser = portalUserByCompanyId.get(company.id);
                   return (
                     <form className="company-settings-card" key={company.id} onSubmit={(event) => saveCompanyCard(event, company)}>
                       <div className="company-card-head">
@@ -3469,6 +3533,7 @@ function App() {
                         </div>
                         <div className="company-card-summary-actions">
                           {company.managedByCompany && <span className="muted-text">Under {company.managedByCompany.name}</span>}
+                          {portalUser && <span className="status-badge open">Portal Enabled</span>}
                           <span className="status-badge open">{roleLabel(company.role)}</span>
                           <span className={`status-badge ${company.active === false ? "stopped" : "completed"}`}>{company.active === false ? "Inactive" : "Active"}</span>
                           <button type="button" className="secondary-button" onClick={() => toggleCompanyExpanded(company.id)}>
@@ -3581,6 +3646,18 @@ function App() {
                           </div>
                           <div className="company-card-actions">
                             <button type="submit" disabled={loading}><Save size={17} /> Save Company</button>
+                            {portalUser ? (
+                              <span className="status-note"><LogIn size={17} /> Portal login: {portalUser.email}</span>
+                            ) : (
+                              <button
+                                type="button"
+                                className="secondary-button"
+                                disabled={loading || !company.email || company.active === false || currentUser?.role !== "ADMIN"}
+                                onClick={() => enablePortalForCompany(company)}
+                              >
+                                <LogIn size={17} /> Enable Portal
+                              </button>
+                            )}
                             <button
                               type="button"
                               className={company.active === false ? undefined : "secondary-button"}
@@ -3650,9 +3727,9 @@ function App() {
                         setBusinessPlanCompanyId(event.target.value);
                         setBusinessScenarioImportResult(null);
                       }}
-                      disabled={isCompanyPortal}
+                      disabled={isPortalScopeLocked}
                     >
-                      {(!isCompanyPortal || businessPlanCompanyOptions.length === 0) && <option value="AUTO">Auto-detect from Excel</option>}
+                      {(!isPortalScopeLocked || businessPlanCompanyOptions.length === 0) && <option value="AUTO">Auto-detect from Excel</option>}
                       {businessPlanCompanyOptions.map((company) => (
                         <option value={company.id} key={company.id}>{company.name}</option>
                       ))}
@@ -4090,7 +4167,7 @@ function App() {
                 <form className="stock-form email-form" onSubmit={saveEmailIntegration}>
                   <label>
                     Company
-                    <select value={emailCompanyId} onChange={(event) => setEmailCompanyId(event.target.value)} disabled={isCompanyPortal}>
+                    <select value={emailCompanyId} onChange={(event) => setEmailCompanyId(event.target.value)} disabled={isPortalScopeLocked}>
                       <option value="">Select company</option>
                       {visibleCompanyOptions.map((company) => (
                         <option value={company.id} key={company.id}>{company.name}</option>
@@ -4351,7 +4428,7 @@ function App() {
                 <h3>Bulk Stock Upload</h3>
                 <label>
                   Company
-                  <select value={bulkCompanyId} onChange={(event) => setBulkCompanyId(event.target.value)} disabled={isCompanyPortal}>
+                  <select value={bulkCompanyId} onChange={(event) => setBulkCompanyId(event.target.value)} disabled={isPortalScopeLocked}>
                     {visibleCompanyOptions.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}
                   </select>
                 </label>
@@ -4370,7 +4447,7 @@ function App() {
                 <h3>Generate From Business Plan</h3>
                 <label>
                   Company
-                  <select value={planStockCompanyId} onChange={(event) => setPlanStockCompanyId(event.target.value)} disabled={isCompanyPortal}>
+                  <select value={planStockCompanyId} onChange={(event) => setPlanStockCompanyId(event.target.value)} disabled={isPortalScopeLocked}>
                     {visibleCompanyOptions.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}
                   </select>
                 </label>
@@ -4389,7 +4466,7 @@ function App() {
                 <h3>Purchase Invoice Parser</h3>
                 <label>
                   Receiving Company
-                  <select value={invoiceCompanyId} onChange={(event) => setInvoiceCompanyId(event.target.value)} disabled={isCompanyPortal}>
+                  <select value={invoiceCompanyId} onChange={(event) => setInvoiceCompanyId(event.target.value)} disabled={isPortalScopeLocked}>
                     {visibleCompanyOptions.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}
                   </select>
                 </label>
@@ -4585,7 +4662,7 @@ function App() {
             <form className="stock-form" onSubmit={saveStock}>
               <label>
                 Company
-                <select value={stockCompanyId} onChange={(event) => setStockCompanyId(event.target.value)} disabled={isCompanyPortal}>
+                <select value={stockCompanyId} onChange={(event) => setStockCompanyId(event.target.value)} disabled={isPortalScopeLocked}>
                   <option value="">Select company</option>
                   {visibleCompanyOptions.map((company) => (
                     <option value={company.id} key={company.id}>{company.name}</option>
@@ -4705,7 +4782,7 @@ function App() {
         )}
 
         {activeView === "workflow" && (
-          <Panel title={isCompanyPortal ? `${portalDisplayName} AI Agent Workflow` : "AI Agent Workflow"}>
+          <Panel title={isPortalScopeLocked ? `${portalDisplayName} AI Agent Workflow` : "AI Agent Workflow"}>
             <div className="settings-tabs workflow-tabs">
               <button type="button" className={workflowTab === "uploaded" ? "secondary-button active-tab" : "secondary-button"} onClick={() => setWorkflowTab("uploaded")}>
                 <FileText size={17} /> Uploaded / Created Workflows
@@ -4742,7 +4819,7 @@ function App() {
                     setPlanAgentCompanyId(event.target.value);
                     if (event.target.value) setBusinessPlanCompanyId(event.target.value);
                   }}
-                  disabled={isCompanyPortal}
+                  disabled={isPortalScopeLocked}
                 >
                   <option value="">Select company</option>
                   {businessPlanCompanyOptions.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}
@@ -4971,7 +5048,7 @@ function App() {
               </label>
               <label>
                 {workflowDirection === "PURCHASE" ? "Buyer" : "Seller"}
-                <select value={workflowCompanyId} onChange={(event) => setWorkflowCompanyId(event.target.value)} disabled={isCompanyPortal}>
+                <select value={workflowCompanyId} onChange={(event) => setWorkflowCompanyId(event.target.value)} disabled={isPortalScopeLocked}>
                   <option value="">Auto choose company</option>
                   {visibleCompanyOptions.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}
                 </select>
@@ -5138,7 +5215,7 @@ function App() {
               </label>
               <label>
                 Company
-                <select value={workflowCompanyId} onChange={(event) => setWorkflowCompanyId(event.target.value)} disabled={isCompanyPortal}>
+                <select value={workflowCompanyId} onChange={(event) => setWorkflowCompanyId(event.target.value)} disabled={isPortalScopeLocked}>
                   <option value="">Select company</option>
                   {visibleCompanyOptions.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}
                 </select>
@@ -5352,7 +5429,7 @@ function App() {
             <form className="stock-form report-filter-form" onSubmit={(event) => { event.preventDefault(); loadReports().catch((error) => setMessage(error.message)); }}>
               <label>
                 Company
-                <select value={reportCompanyId} onChange={(event) => setReportCompanyId(event.target.value)} disabled={isCompanyPortal}>
+                <select value={reportCompanyId} onChange={(event) => setReportCompanyId(event.target.value)} disabled={isPortalScopeLocked}>
                   <option value="ALL">All companies</option>
                   {visibleCompanyOptions.map((company) => <option value={company.id} key={company.id}>{company.name}</option>)}
                 </select>

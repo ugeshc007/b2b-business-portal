@@ -1,4 +1,6 @@
 import { Prisma } from "@prisma/client";
+import bcrypt from "bcryptjs";
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { prisma } from "../db";
@@ -119,6 +121,64 @@ export async function saveCompanyLogo(companyId: string, input: { mimeType: stri
     where: { id: companyId },
     data: { logoPath: `/uploads/company-logos/${fileName}` },
   });
+}
+
+function generateTemporaryPassword() {
+  return `Portal#${randomBytes(6).toString("base64url")}9`;
+}
+
+export async function enableCompanyPortal(companyId: string, input: { email?: string; password?: string; name?: string } = {}) {
+  const company = await prisma.company.findUnique({ where: { id: companyId } });
+  if (!company) throw new Error("Company not found");
+
+  const email = (input.email || company.email).trim().toLowerCase();
+  if (!email) throw new Error("Company email is required before enabling portal access");
+  const name = (input.name || company.name).trim();
+  const existingUser = await prisma.user.findUnique({ where: { email } });
+
+  if (existingUser && existingUser.companyId && existingUser.companyId !== companyId) {
+    throw new Error("This email is already used by another company portal user");
+  }
+  if (existingUser && existingUser.role !== "COMPANY_USER" && existingUser.role !== "VIEWER") {
+    throw new Error("This email is already used by an admin or finance login. Use a different portal email.");
+  }
+
+  const temporaryPassword = input.password?.trim() || (existingUser ? "" : generateTemporaryPassword());
+  const passwordHash = temporaryPassword ? await bcrypt.hash(temporaryPassword, 10) : undefined;
+
+  const user = existingUser
+    ? await prisma.user.update({
+        where: { id: existingUser.id },
+        data: {
+          name,
+          role: "COMPANY_USER",
+          companyId,
+          ...(passwordHash ? { passwordHash } : {}),
+        },
+      })
+    : await prisma.user.create({
+        data: {
+          email,
+          name,
+          role: "COMPANY_USER",
+          companyId,
+          passwordHash: passwordHash!,
+        },
+      });
+
+  return {
+    created: !existingUser,
+    passwordGenerated: Boolean(temporaryPassword),
+    temporaryPassword: temporaryPassword || null,
+    user: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      companyId: user.companyId,
+      createdAt: user.createdAt,
+    },
+  };
 }
 
 export async function deleteCompany(companyId: string) {

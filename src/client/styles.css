@@ -1050,6 +1050,20 @@ nav .nav-button.active {
   gap: 10px;
 }
 
+.status-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid #d8dfda;
+  border-radius: 6px;
+  color: #244b3b;
+  background: #fbfcfb;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .business-import-section {
   display: grid;
   gap: 16px;
