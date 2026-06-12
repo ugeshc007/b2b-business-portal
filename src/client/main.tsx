@@ -796,8 +796,8 @@ function App() {
       return null;
     }
   });
-  const [email, setEmail] = useState("admin@example.com");
-  const [password, setPassword] = useState("ChangeMe123!");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [summary, setSummary] = useState<Summary | null>(null);
   const [reports, setReports] = useState<ReportsData | null>(null);
   const [reportMonth, setReportMonth] = useState(() => appDate().slice(0, 7));
@@ -3169,8 +3169,8 @@ function App() {
               <p>Agent-to-agent procurement portal</p>
             </div>
           </div>
-          <label>Email<input type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-          <label>Password<input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+          <label>Email<input type="email" autoComplete="off" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+          <label>Password<input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
           <button type="submit"><LogIn size={18} /> Login</button>
           {message && <p className="notice">{message}</p>}
         </form>
