@@ -1073,6 +1073,39 @@ nav .nav-button.active {
   min-width: 220px;
 }
 
+.email-log-card {
+  border-bottom: 1px solid #e2e8e4;
+}
+
+.email-log-card:last-child {
+  border-bottom: 0;
+}
+
+.email-log-row {
+  grid-template-columns: minmax(260px, 1.4fr) minmax(260px, 1fr) auto auto;
+}
+
+.email-log-details {
+  display: grid;
+  gap: 8px;
+  padding: 14px 18px 18px;
+  background: #fbfcfb;
+  color: #183328;
+  font-size: 13px;
+}
+
+.email-log-details pre {
+  white-space: pre-wrap;
+  overflow-x: auto;
+  margin: 4px 0 0;
+  padding: 12px;
+  border: 1px solid #d8dfda;
+  border-radius: 6px;
+  background: #ffffff;
+  font-family: Consolas, "Courier New", monospace;
+  line-height: 1.45;
+}
+
 .business-import-section {
   display: grid;
   gap: 16px;

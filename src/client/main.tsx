@@ -92,7 +92,17 @@ type InvoiceDetail = Invoice & {
   purchaseOrder: { poNumber: string };
   lines: Array<{ id: string; quantity: number; unitPrice: string; vatRate: string; lineTotal: string; item: Item }>;
 };
-type EmailLog = { id: string; fromEmail: string; toEmail: string; subject: string; status: string };
+type EmailLog = {
+  id: string;
+  fromEmail: string;
+  toEmail: string;
+  subject: string;
+  body: string;
+  status: string;
+  messageId?: string | null;
+  attachmentPath?: string | null;
+  createdAt?: string;
+};
 type EcommerceOrder = {
   id: string;
   quantity: number;
@@ -884,6 +894,7 @@ function App() {
   const [showProductImportProgress, setShowProductImportProgress] = useState(false);
   const [stockLocalMessage, setStockLocalMessage] = useState("");
   const [expandedCompanyIds, setExpandedCompanyIds] = useState<string[]>([]);
+  const [expandedEmailLogIds, setExpandedEmailLogIds] = useState<string[]>([]);
   const [portalPasswordByCompanyId, setPortalPasswordByCompanyId] = useState<Record<string, string>>({});
   const [showPortalPasswordByCompanyId, setShowPortalPasswordByCompanyId] = useState<Record<string, boolean>>({});
   const [companyScopeId, setCompanyScopeId] = useState("ALL");
@@ -1967,6 +1978,12 @@ function App() {
   function toggleCompanyExpanded(companyId: string) {
     setExpandedCompanyIds((current) =>
       current.includes(companyId) ? current.filter((id) => id !== companyId) : [...current, companyId],
+    );
+  }
+
+  function toggleEmailLogExpanded(emailLogId: string) {
+    setExpandedEmailLogIds((current) =>
+      current.includes(emailLogId) ? current.filter((id) => id !== emailLogId) : [...current, emailLogId],
     );
   }
 
@@ -4441,13 +4458,35 @@ function App() {
             {settingsTab === "log" && (
               <div className="settings-section">
                 <div className="table">
-                  {scopedEmails.map((emailLog) => (
-                    <div className="row" key={emailLog.id}>
-                      <span>{emailLog.subject}</span>
-                      <span>{emailLog.fromEmail} to {emailLog.toEmail}</span>
-                      <span>{emailLog.status}</span>
-                    </div>
-                  ))}
+                  {scopedEmails.map((emailLog) => {
+                    const isExpanded = expandedEmailLogIds.includes(emailLog.id);
+                    return (
+                      <div className="email-log-card" key={emailLog.id}>
+                        <div className="row email-log-row">
+                          <span>
+                            <strong>{emailLog.subject}</strong>
+                            {emailLog.createdAt && <small>{appDateTime(emailLog.createdAt)}</small>}
+                          </span>
+                          <span>{emailLog.fromEmail} to {emailLog.toEmail}</span>
+                          <span className={`status-badge ${emailLog.status === "FAILED" ? "held" : emailLog.status === "SENT_VIA_SMTP" ? "completed" : "open"}`}>{emailLog.status}</span>
+                          <button type="button" className="secondary-button" onClick={() => toggleEmailLogExpanded(emailLog.id)}>
+                            {isExpanded ? <ChevronUp size={17} /> : <ChevronDown size={17} />}
+                            {isExpanded ? "Hide Details" : "Details"}
+                          </button>
+                        </div>
+                        {isExpanded && (
+                          <div className="email-log-details">
+                            <div><strong>From:</strong> {emailLog.fromEmail}</div>
+                            <div><strong>To:</strong> {emailLog.toEmail}</div>
+                            <div><strong>Status:</strong> {emailLog.status}</div>
+                            {emailLog.messageId && <div><strong>Message ID:</strong> {emailLog.messageId}</div>}
+                            {emailLog.attachmentPath && <div><strong>Attachment:</strong> {emailLog.attachmentPath}</div>}
+                            <pre>{emailLog.body || "No email body captured."}</pre>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                   {!scopedEmails.length && <div className="empty-state">No email activity yet.</div>}
                 </div>
               </div>
