@@ -1422,6 +1422,29 @@ function App() {
     });
   }
 
+  async function disablePortalForCompany(company: Company) {
+    setConfirmationToast({
+      title: "Disable company portal?",
+      message: `Disable portal login for ${company.name}? Existing company-user login will stop working. Company profile, stock, workflows, and email settings will remain.`,
+      confirmLabel: "Disable Portal",
+      danger: true,
+      onConfirm: async () => {
+        setLoading(true);
+        try {
+          const result = await request<{ disabled: boolean; deletedUsers: number }>(`/api/catalog/companies/${company.id}/portal-user`, {
+            method: "DELETE",
+          });
+          setMessage(`Portal disabled for ${company.name}. ${result.deletedUsers} login user${result.deletedUsers === 1 ? "" : "s"} removed.`);
+          await loadSummary();
+        } catch (error) {
+          setMessage(error instanceof Error ? error.message : "Could not disable company portal");
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
+  }
+
   async function previewBusinessPlanImport(event: React.FormEvent) {
     event.preventDefault();
     if (!businessPlanFile) {
@@ -3687,6 +3710,14 @@ function App() {
                                   onClick={() => resetPortalPassword(company)}
                                 >
                                   <RefreshCcw size={17} /> Reset Password
+                                </button>
+                                <button
+                                  type="button"
+                                  className="danger-button"
+                                  disabled={loading || currentUser?.role !== "ADMIN"}
+                                  onClick={() => disablePortalForCompany(company)}
+                                >
+                                  <X size={17} /> Disable Portal
                                 </button>
                               </>
                             ) : (

@@ -130,13 +130,21 @@ describe("api", () => {
       .expect(200);
     expect(await prisma.emailLog.count({ where: { toEmail: "famco@example.com", subject: { contains: "B2B Portal Login" } } })).toBe(2);
 
+    const disabled = await request(app)
+      .delete(`/api/catalog/companies/${company.id}/portal-user`)
+      .set("Authorization", `Bearer ${adminLogin.body.token}`)
+      .expect(200);
+    expect(disabled.body.deletedUsers).toBe(1);
+    await request(app)
+      .post("/api/auth/login")
+      .send({ email: "famco@example.com", password: reset.body.temporaryPassword })
+      .expect(400);
+
     const summary = await request(app)
       .get("/api/dashboard/summary")
       .set("Authorization", `Bearer ${adminLogin.body.token}`)
       .expect(200);
-    expect(summary.body.portalUsers).toEqual([
-      expect.objectContaining({ email: "famco@example.com", companyId: company.id, role: "COMPANY_USER" }),
-    ]);
+    expect(summary.body.portalUsers).toEqual([]);
     expect(JSON.stringify(summary.body.portalUsers)).not.toContain("passwordHash");
   });
 

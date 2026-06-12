@@ -1,7 +1,7 @@
 import express, { Router } from "express";
 import { z } from "zod";
 import { requireAdmin, requireAuth } from "../middleware";
-import { bulkUpsertStock, createCompany, createItem, deleteCompany, deleteStock, enableCompanyPortal, listCatalog, parsePurchaseInvoiceText, parseStockCsv, saveCompanyLogo, setStock, updateCompany, updateCompanyStatus } from "../services/catalog";
+import { bulkUpsertStock, createCompany, createItem, deleteCompany, deleteStock, disableCompanyPortal, enableCompanyPortal, listCatalog, parsePurchaseInvoiceText, parseStockCsv, saveCompanyLogo, setStock, updateCompany, updateCompanyStatus } from "../services/catalog";
 import { generateStockFromBusinessPlan, getStockMovementReport } from "../services/stockLedger";
 
 export const catalogRouter = Router();
@@ -112,6 +112,14 @@ catalogRouter.post("/companies/:id/portal-user", requireAdmin, async (req, res, 
       resetPassword: z.boolean().optional(),
     }).parse(req.body ?? {});
     res.status(201).json(await enableCompanyPortal(String(req.params.id), input));
+  } catch (error) {
+    next(error);
+  }
+});
+
+catalogRouter.delete("/companies/:id/portal-user", requireAdmin, async (req, res, next) => {
+  try {
+    res.json(await disableCompanyPortal(String(req.params.id)));
   } catch (error) {
     next(error);
   }

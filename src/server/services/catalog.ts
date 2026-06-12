@@ -266,6 +266,23 @@ export async function enableCompanyPortal(companyId: string, input: { email?: st
   };
 }
 
+export async function disableCompanyPortal(companyId: string) {
+  const company = await prisma.company.findUnique({ where: { id: companyId } });
+  if (!company) throw new Error("Company not found");
+
+  const result = await prisma.user.deleteMany({
+    where: {
+      companyId,
+      role: "COMPANY_USER",
+    },
+  });
+
+  return {
+    disabled: true,
+    deletedUsers: result.count,
+  };
+}
+
 export async function deleteCompany(companyId: string) {
   const company = await prisma.company.findUnique({ where: { id: companyId } });
   if (!company) throw new Error("Company not found");
