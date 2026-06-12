@@ -2,8 +2,10 @@ import { Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { randomBytes } from "node:crypto";
 import fs from "node:fs";
+import nodemailer from "nodemailer";
 import path from "node:path";
 import { prisma } from "../db";
+import { getSmtpSettings } from "./emailIntegrations";
 
 export async function createCompany(data: {
   name: string;
@@ -127,7 +129,64 @@ function generateTemporaryPassword() {
   return `Portal#${randomBytes(6).toString("base64url")}9`;
 }
 
-export async function enableCompanyPortal(companyId: string, input: { email?: string; password?: string; name?: string } = {}) {
+async function sendPortalPasswordEmail(input: { toEmail: string; companyName: string; password: string }) {
+  const subject = `B2B Portal Login - ${input.companyName}`;
+  const body = [
+    `Your B2B Business Portal login is ready.`,
+    "",
+    `Login email: ${input.toEmail}`,
+    `Temporary password: ${input.password}`,
+    "",
+    "Please login and change/reset this password after first access if required.",
+  ].join("\n");
+  const smtp = await getSmtpSettings();
+  let status = "EMAIL_NOT_CONFIGURED";
+  let fromEmail = "system@b2b-portal.local";
+  let messageId: string | undefined;
+  let errorMessage = "";
+
+  if (smtp) {
+    fromEmail = smtp.username;
+    try {
+      const transporter = nodemailer.createTransport({
+        host: smtp.host,
+        port: smtp.port,
+        secure: smtp.secure,
+        auth: {
+          user: smtp.username,
+          pass: smtp.password,
+        },
+      });
+      const result = await transporter.sendMail({
+        from: smtp.username,
+        to: input.toEmail,
+        subject,
+        text: body,
+      });
+      status = "SENT_VIA_SMTP";
+      messageId = result.messageId;
+    } catch (error) {
+      status = "FAILED";
+      errorMessage = error instanceof Error ? error.message : "SMTP send failed";
+    }
+  }
+
+  await prisma.emailLog.create({
+    data: {
+      direction: "OUTBOUND",
+      fromEmail,
+      toEmail: input.toEmail,
+      subject,
+      body: errorMessage ? `${body}\n\nSend failure: ${errorMessage}` : body,
+      status,
+      messageId,
+    },
+  });
+
+  return { status, messageId, error: errorMessage || null };
+}
+
+export async function enableCompanyPortal(companyId: string, input: { email?: string; password?: string; name?: string; resetPassword?: boolean } = {}) {
   const company = await prisma.company.findUnique({ where: { id: companyId } });
   if (!company) throw new Error("Company not found");
 
@@ -143,7 +202,8 @@ export async function enableCompanyPortal(companyId: string, input: { email?: st
     throw new Error("This email is already used by an admin or finance login. Use a different portal email.");
   }
 
-  const temporaryPassword = input.password?.trim() || (existingUser ? "" : generateTemporaryPassword());
+  const shouldResetPassword = input.resetPassword || !existingUser;
+  const temporaryPassword = input.password?.trim() || (shouldResetPassword ? generateTemporaryPassword() : "");
   const passwordHash = temporaryPassword ? await bcrypt.hash(temporaryPassword, 10) : undefined;
 
   const user = existingUser
@@ -166,10 +226,16 @@ export async function enableCompanyPortal(companyId: string, input: { email?: st
         },
       });
 
+  const emailDelivery = temporaryPassword
+    ? await sendPortalPasswordEmail({ toEmail: user.email, companyName: company.name, password: temporaryPassword })
+    : null;
+
   return {
     created: !existingUser,
+    reset: Boolean(existingUser && temporaryPassword),
     passwordGenerated: Boolean(temporaryPassword),
     temporaryPassword: temporaryPassword || null,
+    emailDelivery,
     user: {
       id: user.id,
       email: user.email,

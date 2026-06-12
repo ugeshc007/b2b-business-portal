@@ -1375,15 +1375,46 @@ function App() {
       onConfirm: async () => {
         setLoading(true);
         try {
-          const result = await request<{ created: boolean; temporaryPassword: string | null; user: PortalUser }>(`/api/catalog/companies/${company.id}/portal-user`, {
+          const result = await request<{ created: boolean; reset?: boolean; temporaryPassword: string | null; emailDelivery?: { status: string; error?: string | null } | null; user: PortalUser }>(`/api/catalog/companies/${company.id}/portal-user`, {
             method: "POST",
             body: JSON.stringify({ email: company.email, name: company.name }),
           });
           const passwordText = result.temporaryPassword ? ` Temporary password: ${result.temporaryPassword}` : " Existing password was kept.";
-          setMessage(`Portal ${result.created ? "enabled" : "already enabled"} for ${company.name}. Login: ${result.user.email}.${passwordText}`);
+          const emailText = result.emailDelivery
+            ? result.emailDelivery.status === "SENT_VIA_SMTP"
+              ? " Password email sent."
+              : ` Password email status: ${result.emailDelivery.status}${result.emailDelivery.error ? ` (${result.emailDelivery.error})` : ""}.`
+            : "";
+          setMessage(`Portal ${result.created ? "enabled" : "already enabled"} for ${company.name}. Login: ${result.user.email}.${passwordText}${emailText}`);
           await loadSummary();
         } catch (error) {
           setMessage(error instanceof Error ? error.message : "Could not enable company portal");
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
+  }
+
+  async function resetPortalPassword(company: Company) {
+    setConfirmationToast({
+      title: "Reset portal password?",
+      message: `Generate a new temporary password for ${company.name} and email it to ${company.email}. The old password will stop working.`,
+      confirmLabel: "Reset Password",
+      onConfirm: async () => {
+        setLoading(true);
+        try {
+          const result = await request<{ temporaryPassword: string | null; emailDelivery?: { status: string; error?: string | null } | null; user: PortalUser }>(`/api/catalog/companies/${company.id}/portal-user`, {
+            method: "POST",
+            body: JSON.stringify({ email: company.email, name: company.name, resetPassword: true }),
+          });
+          const emailText = result.emailDelivery?.status === "SENT_VIA_SMTP"
+            ? " Password email sent."
+            : ` Password email status: ${result.emailDelivery?.status ?? "UNKNOWN"}${result.emailDelivery?.error ? ` (${result.emailDelivery.error})` : ""}.`;
+          setMessage(`Portal password reset for ${company.name}. Login: ${result.user.email}. Temporary password: ${result.temporaryPassword}.${emailText}`);
+          await loadSummary();
+        } catch (error) {
+          setMessage(error instanceof Error ? error.message : "Could not reset portal password");
         } finally {
           setLoading(false);
         }
@@ -3647,7 +3678,17 @@ function App() {
                           <div className="company-card-actions">
                             <button type="submit" disabled={loading}><Save size={17} /> Save Company</button>
                             {portalUser ? (
-                              <span className="status-note"><LogIn size={17} /> Portal login: {portalUser.email}</span>
+                              <>
+                                <span className="status-note"><LogIn size={17} /> Portal login: {portalUser.email}</span>
+                                <button
+                                  type="button"
+                                  className="secondary-button"
+                                  disabled={loading || company.active === false || currentUser?.role !== "ADMIN"}
+                                  onClick={() => resetPortalPassword(company)}
+                                >
+                                  <RefreshCcw size={17} /> Reset Password
+                                </button>
+                              </>
                             ) : (
                               <button
                                 type="button"

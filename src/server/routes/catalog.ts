@@ -98,6 +98,7 @@ catalogRouter.post("/companies/:id/portal-user", requireAdmin, async (req, res, 
       email: z.string().email().optional(),
       password: z.string().min(8).optional(),
       name: z.string().min(2).optional(),
+      resetPassword: z.boolean().optional(),
     }).parse(req.body ?? {});
     res.status(201).json(await enableCompanyPortal(String(req.params.id), input));
   } catch (error) {

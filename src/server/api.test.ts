@@ -104,6 +104,7 @@ describe("api", () => {
     expect(portal.body.user.email).toBe("famco@example.com");
     expect(portal.body.user.companyId).toBe(company.id);
     expect(portal.body.temporaryPassword).toMatch(/^Portal#/);
+    expect(portal.body.emailDelivery.status).toBe("EMAIL_NOT_CONFIGURED");
 
     const companyLogin = await request(app)
       .post("/api/auth/login")
@@ -111,6 +112,23 @@ describe("api", () => {
       .expect(200);
     expect(companyLogin.body.user.role).toBe("COMPANY_USER");
     expect(companyLogin.body.user.companyId).toBe(company.id);
+
+    const reset = await request(app)
+      .post(`/api/catalog/companies/${company.id}/portal-user`)
+      .set("Authorization", `Bearer ${adminLogin.body.token}`)
+      .send({ resetPassword: true })
+      .expect(201);
+    expect(reset.body.temporaryPassword).toMatch(/^Portal#/);
+    expect(reset.body.temporaryPassword).not.toBe(portal.body.temporaryPassword);
+    await request(app)
+      .post("/api/auth/login")
+      .send({ email: "famco@example.com", password: portal.body.temporaryPassword })
+      .expect(400);
+    await request(app)
+      .post("/api/auth/login")
+      .send({ email: "famco@example.com", password: reset.body.temporaryPassword })
+      .expect(200);
+    expect(await prisma.emailLog.count({ where: { toEmail: "famco@example.com", subject: { contains: "B2B Portal Login" } } })).toBe(2);
 
     const summary = await request(app)
       .get("/api/dashboard/summary")
