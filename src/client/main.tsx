@@ -117,6 +117,44 @@ type EmailIntegration = {
   lastTestAt?: string;
   company: Company;
 };
+type EmailProvider = "GMAIL" | "OUTLOOK" | "CUSTOM";
+const emailProviderPresets: Record<EmailProvider, {
+  label: string;
+  smtpHost: string;
+  smtpPort: string;
+  smtpEncryption: "TLS" | "SSL" | "NONE";
+  imapHost: string;
+  imapPort: string;
+  imapEncryption: "TLS" | "SSL" | "NONE";
+}> = {
+  GMAIL: {
+    label: "Gmail",
+    smtpHost: "smtp.gmail.com",
+    smtpPort: "587",
+    smtpEncryption: "TLS",
+    imapHost: "imap.gmail.com",
+    imapPort: "993",
+    imapEncryption: "SSL",
+  },
+  OUTLOOK: {
+    label: "Outlook / Microsoft 365",
+    smtpHost: "smtp.office365.com",
+    smtpPort: "587",
+    smtpEncryption: "TLS",
+    imapHost: "outlook.office365.com",
+    imapPort: "993",
+    imapEncryption: "SSL",
+  },
+  CUSTOM: {
+    label: "Custom SMTP / IMAP",
+    smtpHost: "",
+    smtpPort: "587",
+    smtpEncryption: "TLS",
+    imapHost: "",
+    imapPort: "993",
+    imapEncryption: "SSL",
+  },
+};
 type EmailConfigStatus = {
   provider: string;
   oauthConfigured: boolean;
@@ -931,6 +969,7 @@ function App() {
   const [selectedInvoiceId, setSelectedInvoiceId] = useState("");
   const [invoiceDetail, setInvoiceDetail] = useState<InvoiceDetail | null>(null);
   const [emailCompanyId, setEmailCompanyId] = useState("");
+  const [emailProvider, setEmailProvider] = useState<EmailProvider>("GMAIL");
   const [integrationEmail, setIntegrationEmail] = useState("");
   const [integrationMode, setIntegrationMode] = useState<EmailIntegration["mode"]>("SIMULATION");
   const [emailConfigStatus, setEmailConfigStatus] = useState<EmailConfigStatus | null>(null);
@@ -1146,8 +1185,27 @@ function App() {
     const company = summary.companies.find((item) => item.id === emailCompanyId);
     const integration = summary.emailIntegrations.find((item) => item.companyId === emailCompanyId);
     setIntegrationEmail(integration?.email ?? company?.email ?? "");
+    const provider = (integration?.provider === "OUTLOOK" || integration?.provider === "CUSTOM" || integration?.provider === "GMAIL")
+      ? integration.provider as EmailProvider
+      : "GMAIL";
+    setEmailProvider(provider);
     setIntegrationMode(integration?.mode ?? "SIMULATION");
+    setSmtpUsername(integration?.email ?? company?.email ?? "");
+    setImapUsername(integration?.email ?? company?.email ?? "");
   }, [summary, emailCompanyId]);
+
+  function applyEmailProvider(provider: EmailProvider) {
+    setEmailProvider(provider);
+    const preset = emailProviderPresets[provider];
+    if (provider !== "CUSTOM") {
+      setSmtpHost(preset.smtpHost);
+      setSmtpPort(preset.smtpPort);
+      setSmtpEncryption(preset.smtpEncryption);
+      setImapHost(preset.imapHost);
+      setImapPort(preset.imapPort);
+      setImapEncryption(preset.imapEncryption);
+    }
+  }
 
   useEffect(() => {
     if (!summary || !targetBuyerId || !targetMonth) return;
@@ -2951,7 +3009,7 @@ function App() {
   async function saveEmailIntegration(event: React.FormEvent) {
     event.preventDefault();
     if (!emailCompanyId || !integrationEmail) {
-      setMessage("Select company and enter Gmail address.");
+      setMessage("Select company and enter email address.");
       return;
     }
 
@@ -2961,12 +3019,13 @@ function App() {
         method: "POST",
         body: JSON.stringify({
           companyId: emailCompanyId,
+          provider: emailProvider,
           email: integrationEmail,
           mode: integrationMode,
           status: integrationMode === "LIVE" ? "READY_TO_CONNECT" : "READY_TO_CONNECT",
         }),
       });
-      setMessage("Email integration settings saved.");
+      setMessage(`${emailProviderPresets[emailProvider].label} integration settings saved.`);
       await loadSummary();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not save email integration");
@@ -3001,27 +3060,55 @@ function App() {
 
   async function saveSmtpImapConfig(event: React.FormEvent) {
     event.preventDefault();
+    if (!smtpHost || !smtpUsername || !imapHost || !imapUsername) {
+      setMessage("SMTP/IMAP host and username are required.");
+      return;
+    }
     setLoading(true);
     try {
-      const status = await request<EmailConfigStatus>("/api/email-integrations/config/smtp-imap", {
-        method: "POST",
-        body: JSON.stringify({
-          smtpHost,
-          smtpPort: Number(smtpPort),
-          smtpEncryption,
-          smtpUsername,
-          smtpPassword,
-          imapHost,
-          imapPort: Number(imapPort),
-          imapEncryption,
-          imapUsername,
-          imapPassword,
-        }),
-      });
-      setEmailConfigStatus(status);
+      if (emailCompanyId) {
+        await request<EmailIntegration>("/api/email-integrations/config/company-smtp-imap", {
+          method: "POST",
+          body: JSON.stringify({
+            companyId: emailCompanyId,
+            provider: emailProvider,
+            smtpHost,
+            smtpPort: Number(smtpPort),
+            smtpEncryption,
+            smtpUsername,
+            smtpPassword,
+            imapHost,
+            imapPort: Number(imapPort),
+            imapEncryption,
+            imapUsername,
+            imapPassword,
+          }),
+        });
+        setIntegrationEmail(smtpUsername);
+        setIntegrationMode("LIVE");
+        setMessage(`${emailProviderPresets[emailProvider].label} server configuration saved for company email ${smtpUsername}.`);
+      } else {
+        const status = await request<EmailConfigStatus>("/api/email-integrations/config/smtp-imap", {
+          method: "POST",
+          body: JSON.stringify({
+            smtpHost,
+            smtpPort: Number(smtpPort),
+            smtpEncryption,
+            smtpUsername,
+            smtpPassword,
+            imapHost,
+            imapPort: Number(imapPort),
+            imapEncryption,
+            imapUsername,
+            imapPassword,
+          }),
+        });
+        setEmailConfigStatus(status);
+        setMessage(`${emailProviderPresets[emailProvider].label} global SMTP/IMAP configuration saved.`);
+      }
       setSmtpPassword("");
       setImapPassword("");
-      setMessage("SMTP/IMAP configuration saved.");
+      await loadSummary();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not save SMTP/IMAP config");
     } finally {
@@ -4239,6 +4326,23 @@ function App() {
                   <span>IMAP Reading: {emailConfigStatus?.imapConfigured ? "configured" : "missing"}</span>
                 </div>
                 <form className="gmail-config-form" onSubmit={saveSmtpImapConfig}>
+                  <label>
+                    Company Email Account
+                    <select value={emailCompanyId} onChange={(event) => setEmailCompanyId(event.target.value)} disabled={isPortalScopeLocked}>
+                      {!isPortalScopeLocked && <option value="">Global default sender</option>}
+                      {visibleCompanyOptions.map((company) => (
+                        <option value={company.id} key={company.id}>{company.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Email Provider
+                    <select value={emailProvider} onChange={(event) => applyEmailProvider(event.target.value as EmailProvider)}>
+                      <option value="GMAIL">Gmail</option>
+                      <option value="OUTLOOK">Outlook / Microsoft 365</option>
+                      <option value="CUSTOM">Custom SMTP / IMAP</option>
+                    </select>
+                  </label>
                   <label>SMTP Host<input value={smtpHost} onChange={(event) => setSmtpHost(event.target.value)} /></label>
                   <label>SMTP Port<input type="number" value={smtpPort} onChange={(event) => setSmtpPort(event.target.value)} /></label>
                   <label>
@@ -4249,8 +4353,8 @@ function App() {
                       <option value="NONE">None</option>
                     </select>
                   </label>
-                  <label>SMTP Username<input value={smtpUsername} onChange={(event) => setSmtpUsername(event.target.value)} /></label>
-                  <label>SMTP Password<input type="password" value={smtpPassword} onChange={(event) => setSmtpPassword(event.target.value)} placeholder={emailConfigStatus?.smtpConfigured ? "Leave blank to keep existing" : "App password"} /></label>
+                  <label>SMTP Username<input value={smtpUsername} onChange={(event) => { setSmtpUsername(event.target.value); setIntegrationEmail(event.target.value); }} placeholder="email@company.com" /></label>
+                  <label>SMTP Password<input type="password" value={smtpPassword} onChange={(event) => setSmtpPassword(event.target.value)} placeholder={emailConfigStatus?.smtpConfigured ? "Leave blank to keep existing" : "App password or mailbox password"} /></label>
                   <label>IMAP Host<input value={imapHost} onChange={(event) => setImapHost(event.target.value)} /></label>
                   <label>IMAP Port<input type="number" value={imapPort} onChange={(event) => setImapPort(event.target.value)} /></label>
                   <label>
@@ -4261,9 +4365,9 @@ function App() {
                       <option value="NONE">None</option>
                     </select>
                   </label>
-                  <label>IMAP Username<input value={imapUsername} onChange={(event) => setImapUsername(event.target.value)} /></label>
-                  <label>IMAP Password<input type="password" value={imapPassword} onChange={(event) => setImapPassword(event.target.value)} placeholder={emailConfigStatus?.imapConfigured ? "Leave blank to keep existing" : "App password"} /></label>
-                  <button type="submit" disabled={loading}><Save size={17} /> Save SMTP/IMAP</button>
+                  <label>IMAP Username<input value={imapUsername} onChange={(event) => setImapUsername(event.target.value)} placeholder="email@company.com" /></label>
+                  <label>IMAP Password<input type="password" value={imapPassword} onChange={(event) => setImapPassword(event.target.value)} placeholder={emailConfigStatus?.imapConfigured ? "Leave blank to keep existing" : "App password or mailbox password"} /></label>
+                  <button type="submit" disabled={loading}><Save size={17} /> Save {emailCompanyId ? "Company Email Server" : "Global SMTP/IMAP"}</button>
                 </form>
                 <form className="gmail-config-form" onSubmit={saveGmailConfig}>
                   <label>
@@ -4295,7 +4399,7 @@ function App() {
                     </select>
                   </label>
                   <label>
-                    Gmail Address
+                    Email Address
                     <input value={integrationEmail} onChange={(event) => setIntegrationEmail(event.target.value)} placeholder="name@company.com" />
                   </label>
                   <label>
@@ -4303,7 +4407,7 @@ function App() {
                     <select value={integrationMode} onChange={(event) => setIntegrationMode(event.target.value as EmailIntegration["mode"])}>
                       <option value="SIMULATION">Simulation</option>
                       <option value="DRAFT">Draft</option>
-                      <option value="LIVE">Live Gmail</option>
+                      <option value="LIVE">Live SMTP</option>
                     </select>
                   </label>
                   <button type="submit" disabled={loading}><Save size={17} /> Save</button>
@@ -4313,7 +4417,7 @@ function App() {
                   {scopedEmailIntegrations.map((integration) => (
                     <div className="row integration-row" key={integration.id}>
                       <span>{integration.company.name}</span>
-                      <span>{integration.email}</span>
+                      <span>{integration.email}<small>{emailProviderPresets[(integration.provider as EmailProvider) || "CUSTOM"]?.label ?? integration.provider}</small></span>
                       <span>{integration.mode} / {integration.status}</span>
                       <button type="button" onClick={() => testEmailIntegration(integration.companyId)} disabled={loading}>Test</button>
                     </div>

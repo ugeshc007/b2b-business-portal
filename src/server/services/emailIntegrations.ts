@@ -163,6 +163,7 @@ export async function getSmtpSettings() {
 
 export async function saveCompanySmtpImapConfiguration(input: {
   companyId: string;
+  provider?: string;
   smtpHost: string;
   smtpPort: number;
   smtpEncryption: string;
@@ -201,6 +202,7 @@ export async function saveCompanySmtpImapConfiguration(input: {
 
   return upsertEmailIntegration({
     companyId: input.companyId,
+    provider: input.provider,
     email: input.smtpUsername,
     mode: "LIVE",
     status: "CONNECTED",
@@ -231,6 +233,7 @@ export async function getCompanySmtpSettings(companyId: string) {
 
 export async function upsertEmailIntegration(input: {
   companyId: string;
+  provider?: string;
   email: string;
   mode: string;
   status?: string;
@@ -241,14 +244,14 @@ export async function upsertEmailIntegration(input: {
   return prisma.emailIntegration.upsert({
     where: { companyId: input.companyId },
     update: {
-      provider: "GMAIL",
+      provider: input.provider ?? "GMAIL",
       email: input.email,
       mode: input.mode,
       status: input.status ?? "DISCONNECTED",
     },
     create: {
       companyId: input.companyId,
-      provider: "GMAIL",
+      provider: input.provider ?? "GMAIL",
       email: input.email,
       mode: input.mode,
       status: input.status ?? "DISCONNECTED",

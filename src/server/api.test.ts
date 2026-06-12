@@ -2262,11 +2262,35 @@ describe("api", () => {
     expect(smtpConfigured.body.smtpConfigured).toBe(true);
     expect(smtpConfigured.body.imapConfigured).toBe(true);
 
+    const outlookConfigured = await request(app)
+      .post("/api/email-integrations/config/company-smtp-imap")
+      .set("Authorization", `Bearer ${login.body.token}`)
+      .send({
+        companyId: company.id,
+        provider: "OUTLOOK",
+        smtpHost: "smtp.office365.com",
+        smtpPort: 587,
+        smtpEncryption: "TLS",
+        smtpUsername: "finance@famco.test",
+        smtpPassword: "outlook-password-value",
+        imapHost: "outlook.office365.com",
+        imapPort: 993,
+        imapEncryption: "SSL",
+        imapUsername: "finance@famco.test",
+        imapPassword: "outlook-password-value",
+      })
+      .expect(201);
+
+    expect(outlookConfigured.body.provider).toBe("OUTLOOK");
+    expect(outlookConfigured.body.email).toBe("finance@famco.test");
+    expect(outlookConfigured.body.mode).toBe("LIVE");
+
     const integration = await request(app)
       .post("/api/email-integrations")
       .set("Authorization", `Bearer ${login.body.token}`)
       .send({
         companyId: company.id,
+        provider: "GMAIL",
         email: "procurement@dealzarabia.test",
         mode: "SIMULATION",
         status: "READY_TO_CONNECT",

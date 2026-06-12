@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { requireAuth } from "../middleware";
-import { getEmailConfigurationStatus, listEmailIntegrations, saveEmailConfiguration, saveSmtpImapConfiguration, testEmailIntegration, upsertEmailIntegration } from "../services/emailIntegrations";
+import { getEmailConfigurationStatus, listEmailIntegrations, saveCompanySmtpImapConfiguration, saveEmailConfiguration, saveSmtpImapConfiguration, testEmailIntegration, upsertEmailIntegration } from "../services/emailIntegrations";
 
 export const emailIntegrationRouter = Router();
 emailIntegrationRouter.use(requireAuth);
@@ -65,10 +65,37 @@ emailIntegrationRouter.post("/config/smtp-imap", async (req, res, next) => {
   }
 });
 
+emailIntegrationRouter.post("/config/company-smtp-imap", async (req, res, next) => {
+  try {
+    const input = z.object({
+      companyId: z.string(),
+      provider: z.enum(["GMAIL", "OUTLOOK", "CUSTOM"]).default("CUSTOM"),
+      smtpHost: z.string().min(3),
+      smtpPort: z.number().int().positive(),
+      smtpEncryption: z.enum(["TLS", "SSL", "NONE"]),
+      smtpUsername: z.string().email(),
+      smtpPassword: z.string().min(8).optional().or(z.literal("")),
+      imapHost: z.string().min(3),
+      imapPort: z.number().int().positive(),
+      imapEncryption: z.enum(["TLS", "SSL", "NONE"]),
+      imapUsername: z.string().email(),
+      imapPassword: z.string().min(8).optional().or(z.literal("")),
+    }).parse(req.body);
+    res.status(201).json(await saveCompanySmtpImapConfiguration({
+      ...input,
+      smtpPassword: input.smtpPassword || undefined,
+      imapPassword: input.imapPassword || undefined,
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
 emailIntegrationRouter.post("/", async (req, res, next) => {
   try {
     const input = z.object({
       companyId: z.string(),
+      provider: z.enum(["GMAIL", "OUTLOOK", "CUSTOM"]).optional(),
       email: z.string().email(),
       mode: z.enum(["SIMULATION", "DRAFT", "LIVE"]),
       status: z.enum(["DISCONNECTED", "READY_TO_CONNECT", "CONNECTED"]).optional(),
