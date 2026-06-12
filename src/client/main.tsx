@@ -987,6 +987,8 @@ function App() {
   const [imapEncryption, setImapEncryption] = useState<"TLS" | "SSL" | "NONE">("SSL");
   const [imapUsername, setImapUsername] = useState("");
   const [imapPassword, setImapPassword] = useState("");
+  const [smtpPasswordSaved, setSmtpPasswordSaved] = useState(false);
+  const [imapPasswordSaved, setImapPasswordSaved] = useState(false);
   const [systemLogLevel, setSystemLogLevel] = useState("ERROR");
   const [systemLogs, setSystemLogs] = useState<SystemLogResponse | null>(null);
   const [flushResult, setFlushResult] = useState<FlushResult | null>(null);
@@ -1192,6 +1194,8 @@ function App() {
     setIntegrationMode(integration?.mode ?? "SIMULATION");
     setSmtpUsername(integration?.email ?? company?.email ?? "");
     setImapUsername(integration?.email ?? company?.email ?? "");
+    setSmtpPasswordSaved(Boolean(integration));
+    setImapPasswordSaved(Boolean(integration));
   }, [summary, emailCompanyId]);
 
   function applyEmailProvider(provider: EmailProvider) {
@@ -3106,6 +3110,8 @@ function App() {
       }
       setSmtpPassword("");
       setImapPassword("");
+      setSmtpPasswordSaved(Boolean(smtpPassword || emailCompanyId));
+      setImapPasswordSaved(Boolean(imapPassword || emailCompanyId));
       await loadSummary();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not save SMTP/IMAP config");
@@ -4357,7 +4363,7 @@ function App() {
                     </select>
                   </label>
                   <label>SMTP Username<input value={smtpUsername} onChange={(event) => { setSmtpUsername(event.target.value); setIntegrationEmail(event.target.value); }} placeholder="email@company.com" /></label>
-                  <label>SMTP Password<input type="password" value={smtpPassword} onChange={(event) => setSmtpPassword(event.target.value)} placeholder={emailConfigStatus?.smtpConfigured ? "Leave blank to keep existing" : "App password or mailbox password"} /></label>
+                  <label>SMTP Password<input type="password" value={smtpPassword} onChange={(event) => setSmtpPassword(event.target.value)} placeholder={smtpPasswordSaved || emailConfigStatus?.smtpConfigured ? "•••••••• saved - leave blank to keep existing" : "App password or mailbox password"} /></label>
                   <label>IMAP Host<input value={imapHost} onChange={(event) => setImapHost(event.target.value)} /></label>
                   <label>IMAP Port<input type="number" value={imapPort} onChange={(event) => setImapPort(event.target.value)} /></label>
                   <label>
@@ -4369,7 +4375,7 @@ function App() {
                     </select>
                   </label>
                   <label>IMAP Username<input value={imapUsername} onChange={(event) => setImapUsername(event.target.value)} placeholder="email@company.com" /></label>
-                  <label>IMAP Password<input type="password" value={imapPassword} onChange={(event) => setImapPassword(event.target.value)} placeholder={emailConfigStatus?.imapConfigured ? "Leave blank to keep existing" : "App password or mailbox password"} /></label>
+                  <label>IMAP Password<input type="password" value={imapPassword} onChange={(event) => setImapPassword(event.target.value)} placeholder={imapPasswordSaved || emailConfigStatus?.imapConfigured ? "•••••••• saved - leave blank to keep existing" : "App password or mailbox password"} /></label>
                   <button type="submit" disabled={loading}><Save size={17} /> Save {emailCompanyId ? "Company Email Server" : "Global SMTP/IMAP"}</button>
                 </form>
                 <form className="gmail-config-form" onSubmit={saveGmailConfig}>
