@@ -1064,6 +1064,15 @@ nav .nav-button.active {
   font-weight: 700;
 }
 
+.inline-password-field {
+  margin: 0;
+}
+
+.inline-password-field input {
+  min-height: 38px;
+  min-width: 220px;
+}
+
 .business-import-section {
   display: grid;
   gap: 16px;

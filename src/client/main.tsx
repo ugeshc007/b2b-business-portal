@@ -833,6 +833,7 @@ function App() {
   const [showProductImportProgress, setShowProductImportProgress] = useState(false);
   const [stockLocalMessage, setStockLocalMessage] = useState("");
   const [expandedCompanyIds, setExpandedCompanyIds] = useState<string[]>([]);
+  const [portalPasswordByCompanyId, setPortalPasswordByCompanyId] = useState<Record<string, string>>({});
   const [companyScopeId, setCompanyScopeId] = useState("ALL");
   const [profileCompanyId, setProfileCompanyId] = useState("");
   const [profileName, setProfileName] = useState("");
@@ -1415,6 +1416,38 @@ function App() {
           await loadSummary();
         } catch (error) {
           setMessage(error instanceof Error ? error.message : "Could not reset portal password");
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
+  }
+
+  async function setPortalPassword(company: Company) {
+    const manualPassword = (portalPasswordByCompanyId[company.id] ?? "").trim();
+    if (manualPassword.length < 8) {
+      setMessage("Portal password must be at least 8 characters.");
+      return;
+    }
+    setConfirmationToast({
+      title: "Set portal password?",
+      message: `Set the portal password for ${company.name}. This will replace the old password and attempt to email the new password to ${company.email}.`,
+      confirmLabel: "Set Password",
+      onConfirm: async () => {
+        setLoading(true);
+        try {
+          const result = await request<{ temporaryPassword: string | null; emailDelivery?: { status: string; error?: string | null } | null; user: PortalUser }>(`/api/catalog/companies/${company.id}/portal-user`, {
+            method: "POST",
+            body: JSON.stringify({ email: company.email, name: company.name, password: manualPassword }),
+          });
+          const emailText = result.emailDelivery?.status === "SENT_VIA_SMTP"
+            ? " Password email sent."
+            : ` Password email status: ${result.emailDelivery?.status ?? "UNKNOWN"}${result.emailDelivery?.error ? ` (${result.emailDelivery.error})` : ""}.`;
+          setPortalPasswordByCompanyId((current) => ({ ...current, [company.id]: "" }));
+          setMessage(`Portal password set for ${company.name}. Login: ${result.user.email}. Password: ${result.temporaryPassword}.${emailText}`);
+          await loadSummary();
+        } catch (error) {
+          setMessage(error instanceof Error ? error.message : "Could not set portal password");
         } finally {
           setLoading(false);
         }
@@ -3710,6 +3743,23 @@ function App() {
                                   onClick={() => resetPortalPassword(company)}
                                 >
                                   <RefreshCcw size={17} /> Reset Password
+                                </button>
+                                <label className="inline-password-field">
+                                  <input
+                                    type="password"
+                                    placeholder="Set password manually"
+                                    value={portalPasswordByCompanyId[company.id] ?? ""}
+                                    onChange={(event) => setPortalPasswordByCompanyId((current) => ({ ...current, [company.id]: event.target.value }))}
+                                    disabled={loading || currentUser?.role !== "ADMIN"}
+                                  />
+                                </label>
+                                <button
+                                  type="button"
+                                  className="secondary-button"
+                                  disabled={loading || currentUser?.role !== "ADMIN" || (portalPasswordByCompanyId[company.id] ?? "").trim().length < 8}
+                                  onClick={() => setPortalPassword(company)}
+                                >
+                                  <Save size={17} /> Set Password
                                 </button>
                                 <button
                                   type="button"

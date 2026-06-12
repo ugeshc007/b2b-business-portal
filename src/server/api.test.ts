@@ -130,6 +130,16 @@ describe("api", () => {
       .expect(200);
     expect(await prisma.emailLog.count({ where: { toEmail: "famco@example.com", subject: { contains: "B2B Portal Login" } } })).toBe(2);
 
+    await request(app)
+      .post(`/api/catalog/companies/${company.id}/portal-user`)
+      .set("Authorization", `Bearer ${adminLogin.body.token}`)
+      .send({ password: "ManualPass123!" })
+      .expect(201);
+    await request(app)
+      .post("/api/auth/login")
+      .send({ email: "famco@example.com", password: "ManualPass123!" })
+      .expect(200);
+
     const disabled = await request(app)
       .delete(`/api/catalog/companies/${company.id}/portal-user`)
       .set("Authorization", `Bearer ${adminLogin.body.token}`)
