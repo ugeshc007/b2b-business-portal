@@ -1188,7 +1188,7 @@ function App() {
     const provider = (integration?.provider === "OUTLOOK" || integration?.provider === "CUSTOM" || integration?.provider === "GMAIL")
       ? integration.provider as EmailProvider
       : "GMAIL";
-    setEmailProvider(provider);
+    applyEmailProvider(provider);
     setIntegrationMode(integration?.mode ?? "SIMULATION");
     setSmtpUsername(integration?.email ?? company?.email ?? "");
     setImapUsername(integration?.email ?? company?.email ?? "");
@@ -1197,14 +1197,12 @@ function App() {
   function applyEmailProvider(provider: EmailProvider) {
     setEmailProvider(provider);
     const preset = emailProviderPresets[provider];
-    if (provider !== "CUSTOM") {
-      setSmtpHost(preset.smtpHost);
-      setSmtpPort(preset.smtpPort);
-      setSmtpEncryption(preset.smtpEncryption);
-      setImapHost(preset.imapHost);
-      setImapPort(preset.imapPort);
-      setImapEncryption(preset.imapEncryption);
-    }
+    setSmtpHost(preset.smtpHost);
+    setSmtpPort(preset.smtpPort);
+    setSmtpEncryption(preset.smtpEncryption);
+    setImapHost(preset.imapHost);
+    setImapPort(preset.imapPort);
+    setImapEncryption(preset.imapEncryption);
   }
 
   useEffect(() => {
