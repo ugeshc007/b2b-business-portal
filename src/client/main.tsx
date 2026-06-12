@@ -784,6 +784,19 @@ function messageTitle(message: string) {
   return severity === "error" ? "Error" : severity === "warning" ? "Warning" : "Info";
 }
 
+type PortalEmailDelivery = { status: string; error?: string | null; fromEmail?: string | null; smtpSource?: string | null };
+
+function portalEmailDeliveryText(delivery?: PortalEmailDelivery | null) {
+  if (!delivery) return "";
+  if (delivery.status === "SENT_VIA_SMTP") {
+    return ` Password email sent from ${delivery.fromEmail ?? "configured SMTP"}${delivery.smtpSource ? ` (${delivery.smtpSource})` : ""}.`;
+  }
+  if (delivery.status === "EMAIL_NOT_CONFIGURED") {
+    return " Password email not sent: SMTP is not configured for this company, owner company, or global settings.";
+  }
+  return ` Password email status: ${delivery.status}${delivery.fromEmail ? ` from ${delivery.fromEmail}` : ""}${delivery.error ? ` (${delivery.error})` : ""}.`;
+}
+
 function App() {
   const [token, setToken] = useState(localStorage.getItem("b2b-token") ?? "");
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
@@ -834,6 +847,7 @@ function App() {
   const [stockLocalMessage, setStockLocalMessage] = useState("");
   const [expandedCompanyIds, setExpandedCompanyIds] = useState<string[]>([]);
   const [portalPasswordByCompanyId, setPortalPasswordByCompanyId] = useState<Record<string, string>>({});
+  const [showPortalPasswordByCompanyId, setShowPortalPasswordByCompanyId] = useState<Record<string, boolean>>({});
   const [companyScopeId, setCompanyScopeId] = useState("ALL");
   const [profileCompanyId, setProfileCompanyId] = useState("");
   const [profileName, setProfileName] = useState("");
@@ -1376,16 +1390,12 @@ function App() {
       onConfirm: async () => {
         setLoading(true);
         try {
-          const result = await request<{ created: boolean; reset?: boolean; temporaryPassword: string | null; emailDelivery?: { status: string; error?: string | null } | null; user: PortalUser }>(`/api/catalog/companies/${company.id}/portal-user`, {
+          const result = await request<{ created: boolean; reset?: boolean; temporaryPassword: string | null; emailDelivery?: PortalEmailDelivery | null; user: PortalUser }>(`/api/catalog/companies/${company.id}/portal-user`, {
             method: "POST",
             body: JSON.stringify({ email: company.email, name: company.name }),
           });
           const passwordText = result.temporaryPassword ? ` Temporary password: ${result.temporaryPassword}` : " Existing password was kept.";
-          const emailText = result.emailDelivery
-            ? result.emailDelivery.status === "SENT_VIA_SMTP"
-              ? " Password email sent."
-              : ` Password email status: ${result.emailDelivery.status}${result.emailDelivery.error ? ` (${result.emailDelivery.error})` : ""}.`
-            : "";
+          const emailText = portalEmailDeliveryText(result.emailDelivery);
           setMessage(`Portal ${result.created ? "enabled" : "already enabled"} for ${company.name}. Login: ${result.user.email}.${passwordText}${emailText}`);
           await loadSummary();
         } catch (error) {
@@ -1405,13 +1415,11 @@ function App() {
       onConfirm: async () => {
         setLoading(true);
         try {
-          const result = await request<{ temporaryPassword: string | null; emailDelivery?: { status: string; error?: string | null } | null; user: PortalUser }>(`/api/catalog/companies/${company.id}/portal-user`, {
+          const result = await request<{ temporaryPassword: string | null; emailDelivery?: PortalEmailDelivery | null; user: PortalUser }>(`/api/catalog/companies/${company.id}/portal-user`, {
             method: "POST",
             body: JSON.stringify({ email: company.email, name: company.name, resetPassword: true }),
           });
-          const emailText = result.emailDelivery?.status === "SENT_VIA_SMTP"
-            ? " Password email sent."
-            : ` Password email status: ${result.emailDelivery?.status ?? "UNKNOWN"}${result.emailDelivery?.error ? ` (${result.emailDelivery.error})` : ""}.`;
+          const emailText = portalEmailDeliveryText(result.emailDelivery);
           setMessage(`Portal password reset for ${company.name}. Login: ${result.user.email}. Temporary password: ${result.temporaryPassword}.${emailText}`);
           await loadSummary();
         } catch (error) {
@@ -1436,13 +1444,11 @@ function App() {
       onConfirm: async () => {
         setLoading(true);
         try {
-          const result = await request<{ temporaryPassword: string | null; emailDelivery?: { status: string; error?: string | null } | null; user: PortalUser }>(`/api/catalog/companies/${company.id}/portal-user`, {
+          const result = await request<{ temporaryPassword: string | null; emailDelivery?: PortalEmailDelivery | null; user: PortalUser }>(`/api/catalog/companies/${company.id}/portal-user`, {
             method: "POST",
             body: JSON.stringify({ email: company.email, name: company.name, password: manualPassword }),
           });
-          const emailText = result.emailDelivery?.status === "SENT_VIA_SMTP"
-            ? " Password email sent."
-            : ` Password email status: ${result.emailDelivery?.status ?? "UNKNOWN"}${result.emailDelivery?.error ? ` (${result.emailDelivery.error})` : ""}.`;
+          const emailText = portalEmailDeliveryText(result.emailDelivery);
           setPortalPasswordByCompanyId((current) => ({ ...current, [company.id]: "" }));
           setMessage(`Portal password set for ${company.name}. Login: ${result.user.email}. Password: ${result.temporaryPassword}.${emailText}`);
           await loadSummary();
@@ -3746,13 +3752,21 @@ function App() {
                                 </button>
                                 <label className="inline-password-field">
                                   <input
-                                    type="password"
+                                    type={showPortalPasswordByCompanyId[company.id] === false ? "password" : "text"}
                                     placeholder="Set password manually"
                                     value={portalPasswordByCompanyId[company.id] ?? ""}
                                     onChange={(event) => setPortalPasswordByCompanyId((current) => ({ ...current, [company.id]: event.target.value }))}
                                     disabled={loading || currentUser?.role !== "ADMIN"}
                                   />
                                 </label>
+                                <button
+                                  type="button"
+                                  className="secondary-button"
+                                  disabled={loading || currentUser?.role !== "ADMIN"}
+                                  onClick={() => setShowPortalPasswordByCompanyId((current) => ({ ...current, [company.id]: current[company.id] === false }))}
+                                >
+                                  {showPortalPasswordByCompanyId[company.id] === false ? "Show" : "Hide"}
+                                </button>
                                 <button
                                   type="button"
                                   className="secondary-button"

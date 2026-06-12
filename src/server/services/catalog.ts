@@ -140,12 +140,13 @@ function generateTemporaryPassword() {
 
 async function getPortalPasswordSmtp(company: { id: string; managedByCompanyId?: string | null }) {
   const companySmtp = await getCompanySmtpSettings(company.id);
-  if (companySmtp) return companySmtp;
+  if (companySmtp) return { ...companySmtp, source: "company" };
   if (company.managedByCompanyId) {
     const ownerSmtp = await getCompanySmtpSettings(company.managedByCompanyId);
-    if (ownerSmtp) return ownerSmtp;
+    if (ownerSmtp) return { ...ownerSmtp, source: "owner company" };
   }
-  return getSmtpSettings();
+  const globalSmtp = await getSmtpSettings();
+  return globalSmtp ? { ...globalSmtp, source: "global" } : null;
 }
 
 async function sendPortalPasswordEmail(input: { companyId: string; managedByCompanyId?: string | null; toEmail: string; companyName: string; password: string }) {
@@ -202,7 +203,7 @@ async function sendPortalPasswordEmail(input: { companyId: string; managedByComp
     },
   });
 
-  return { status, messageId, error: errorMessage || null };
+  return { status, messageId, error: errorMessage || null, fromEmail, smtpSource: smtp?.source ?? null };
 }
 
 export async function enableCompanyPortal(companyId: string, input: { email?: string; password?: string; name?: string; resetPassword?: boolean } = {}) {
