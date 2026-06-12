@@ -1,7 +1,7 @@
 import express, { Router } from "express";
 import { z } from "zod";
 import { requireAdmin, requireAuth } from "../middleware";
-import { bulkUpsertStock, createCompany, createItem, deleteCompany, deleteStock, enableCompanyPortal, listCatalog, parsePurchaseInvoiceText, parseStockCsv, saveCompanyLogo, setStock, updateCompany } from "../services/catalog";
+import { bulkUpsertStock, createCompany, createItem, deleteCompany, deleteStock, enableCompanyPortal, listCatalog, parsePurchaseInvoiceText, parseStockCsv, saveCompanyLogo, setStock, updateCompany, updateCompanyStatus } from "../services/catalog";
 import { generateStockFromBusinessPlan, getStockMovementReport } from "../services/stockLedger";
 
 export const catalogRouter = Router();
@@ -73,6 +73,17 @@ catalogRouter.patch("/companies/:id", async (req, res, next) => {
       bankCid: input.bankCid || undefined,
       bankBranch: input.bankBranch || undefined,
     }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+catalogRouter.patch("/companies/:id/status", requireAdmin, async (req, res, next) => {
+  try {
+    const input = z.object({
+      active: z.boolean(),
+    }).parse(req.body);
+    res.json(await updateCompanyStatus(String(req.params.id), input.active));
   } catch (error) {
     next(error);
   }

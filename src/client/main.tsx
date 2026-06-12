@@ -3706,27 +3706,11 @@ function App() {
                               onClick={async () => {
                                 setLoading(true);
                                 try {
-                                  await request(`/api/catalog/companies/${company.id}`, {
+                                  const updatedCompany = await request<Company>(`/api/catalog/companies/${company.id}/status`, {
                                     method: "PATCH",
-                                    body: JSON.stringify({
-                                      name: company.name,
-                                      legalName: company.legalName,
-                                      role: company.role ?? "BOTH",
-                                      managedByCompanyId: company.managedByCompanyId ?? undefined,
-                                      location: company.location,
-                                      email: company.email,
-                                      trn: company.trn || undefined,
-                                      active: company.active === false,
-                                      vatEnabled: company.vatEnabled !== false,
-                                      bankName: company.bankName || undefined,
-                                      bankBeneficiaryName: company.bankBeneficiaryName || undefined,
-                                      bankAccountNumber: company.bankAccountNumber || undefined,
-                                      bankIban: company.bankIban || undefined,
-                                      bankCid: company.bankCid || undefined,
-                                      bankBranch: company.bankBranch || undefined,
-                                    }),
+                                    body: JSON.stringify({ active: company.active === false }),
                                   });
-                                  setMessage(`${company.name} ${company.active === false ? "activated" : "deactivated"}.`);
+                                  setMessage(`${updatedCompany.name} ${updatedCompany.active === false ? "deactivated" : "activated"}.`);
                                   await loadSummary();
                                 } catch (error) {
                                   setMessage(error instanceof Error ? error.message : "Could not update company status");

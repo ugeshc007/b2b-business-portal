@@ -5,7 +5,7 @@ import fs from "node:fs";
 import nodemailer from "nodemailer";
 import path from "node:path";
 import { prisma } from "../db";
-import { getSmtpSettings } from "./emailIntegrations";
+import { getCompanySmtpSettings, getSmtpSettings } from "./emailIntegrations";
 
 export async function createCompany(data: {
   name: string;
@@ -88,6 +88,15 @@ export async function updateCompany(companyId: string, data: {
   });
 }
 
+export async function updateCompanyStatus(companyId: string, active: boolean) {
+  const company = await prisma.company.findUnique({ where: { id: companyId } });
+  if (!company) throw new Error("Company not found");
+  return prisma.company.update({
+    where: { id: companyId },
+    data: { active },
+  });
+}
+
 export async function saveCompanyLogo(companyId: string, input: { mimeType: string; buffer: Buffer }) {
   const company = await prisma.company.findUnique({ where: { id: companyId } });
   if (!company) throw new Error("Company not found");
@@ -129,7 +138,17 @@ function generateTemporaryPassword() {
   return `Portal#${randomBytes(6).toString("base64url")}9`;
 }
 
-async function sendPortalPasswordEmail(input: { toEmail: string; companyName: string; password: string }) {
+async function getPortalPasswordSmtp(company: { id: string; managedByCompanyId?: string | null }) {
+  const companySmtp = await getCompanySmtpSettings(company.id);
+  if (companySmtp) return companySmtp;
+  if (company.managedByCompanyId) {
+    const ownerSmtp = await getCompanySmtpSettings(company.managedByCompanyId);
+    if (ownerSmtp) return ownerSmtp;
+  }
+  return getSmtpSettings();
+}
+
+async function sendPortalPasswordEmail(input: { companyId: string; managedByCompanyId?: string | null; toEmail: string; companyName: string; password: string }) {
   const subject = `B2B Portal Login - ${input.companyName}`;
   const body = [
     `Your B2B Business Portal login is ready.`,
@@ -139,7 +158,7 @@ async function sendPortalPasswordEmail(input: { toEmail: string; companyName: st
     "",
     "Please login and change/reset this password after first access if required.",
   ].join("\n");
-  const smtp = await getSmtpSettings();
+  const smtp = await getPortalPasswordSmtp({ id: input.companyId, managedByCompanyId: input.managedByCompanyId });
   let status = "EMAIL_NOT_CONFIGURED";
   let fromEmail = "system@b2b-portal.local";
   let messageId: string | undefined;
@@ -227,7 +246,7 @@ export async function enableCompanyPortal(companyId: string, input: { email?: st
       });
 
   const emailDelivery = temporaryPassword
-    ? await sendPortalPasswordEmail({ toEmail: user.email, companyName: company.name, password: temporaryPassword })
+    ? await sendPortalPasswordEmail({ companyId: company.id, managedByCompanyId: company.managedByCompanyId, toEmail: user.email, companyName: company.name, password: temporaryPassword })
     : null;
 
   return {

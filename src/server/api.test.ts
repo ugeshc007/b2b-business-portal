@@ -140,6 +140,36 @@ describe("api", () => {
     expect(JSON.stringify(summary.body.portalUsers)).not.toContain("passwordHash");
   });
 
+  it("toggles company active status without requiring the full company form payload", async () => {
+    await createUser("admin@example.com", "ChangeMe123!", "Admin", "ADMIN");
+    const company = await createCompany({
+      name: "Cool Pad Mobile",
+      legalName: "Cool Pad Mobile LLC",
+      role: "BUYER",
+      managedByCompanyId: undefined,
+      location: "Dubai, UAE",
+      email: "cool-pad@example.com",
+    });
+    const adminLogin = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "admin@example.com", password: "ChangeMe123!" })
+      .expect(200);
+
+    const deactivated = await request(app)
+      .patch(`/api/catalog/companies/${company.id}/status`)
+      .set("Authorization", `Bearer ${adminLogin.body.token}`)
+      .send({ active: false })
+      .expect(200);
+    expect(deactivated.body.active).toBe(false);
+
+    const activated = await request(app)
+      .patch(`/api/catalog/companies/${company.id}/status`)
+      .set("Authorization", `Bearer ${adminLogin.body.token}`)
+      .send({ active: true })
+      .expect(200);
+    expect(activated.body.active).toBe(true);
+  });
+
   it("does not send HTTPS-only browser isolation headers on HTTP deployments", async () => {
     const response = await request(app).get("/api/health").expect(200);
     expect(response.headers["cross-origin-opener-policy"]).toBeUndefined();
