@@ -1,5 +1,6 @@
 import { prisma } from "../db";
 import { env } from "../env";
+import nodemailer from "nodemailer";
 
 const gmailSettingKeys = [
   "GOOGLE_CLIENT_ID",
@@ -273,14 +274,68 @@ export async function testEmailIntegration(companyId: string) {
     data: { lastTestAt: testedAt, status: integration.status === "CONNECTED" ? "CONNECTED" : "READY_TO_CONNECT" },
   });
 
+  const subject = `${integration.provider === "OUTLOOK" ? "Outlook" : integration.provider === "CUSTOM" ? "SMTP" : "Gmail"} integration test - ${integration.company.name}`;
+  const body = [
+    `This is a real email delivery test from B2B Business Portal.`,
+    "",
+    `Company: ${integration.company.name}`,
+    `Provider: ${integration.provider}`,
+    `Mode: ${integration.mode}`,
+    `Tested at: ${testedAt.toISOString()}`,
+  ].join("\n");
+  const smtp = await getCompanySmtpSettings(companyId);
+  let status = "SIMULATED";
+  let fromEmail = integration.email;
+  let messageId: string | undefined;
+
+  if (integration.mode === "LIVE") {
+    if (!smtp) {
+      status = "EMAIL_NOT_CONFIGURED";
+    } else {
+      fromEmail = smtp.username;
+      try {
+        const transporter = nodemailer.createTransport({
+          host: smtp.host,
+          port: smtp.port,
+          secure: smtp.secure,
+          auth: {
+            user: smtp.username,
+            pass: smtp.password,
+          },
+        });
+        const result = await transporter.sendMail({
+          from: smtp.username,
+          to: integration.email,
+          subject,
+          text: body,
+        });
+        status = "SENT_VIA_SMTP";
+        messageId = result.messageId;
+      } catch (error) {
+        status = "FAILED";
+        return prisma.emailLog.create({
+          data: {
+            direction: "OUTBOUND",
+            fromEmail,
+            toEmail: integration.email,
+            subject,
+            body: `${body}\n\nSend failure: ${error instanceof Error ? error.message : "SMTP send failed"}`,
+            status,
+          },
+        });
+      }
+    }
+  }
+
   return prisma.emailLog.create({
     data: {
       direction: "OUTBOUND",
-      fromEmail: integration.email,
+      fromEmail,
       toEmail: integration.email,
-      subject: `Gmail integration test - ${integration.company.name}`,
-      body: `Test mode: ${integration.mode}. This confirms the email configuration is saved and audit logging works.`,
-      status: integration.mode === "LIVE" && integration.status === "CONNECTED" ? "SENT_VIA_GMAIL" : "SIMULATED",
+      subject,
+      body,
+      status,
+      messageId,
     },
   });
 }

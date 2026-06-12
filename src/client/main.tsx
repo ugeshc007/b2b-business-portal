@@ -3124,8 +3124,13 @@ function App() {
       onConfirm: async () => {
         setLoading(true);
         try {
-          await request(`/api/email-integrations/${companyId}/test`, { method: "POST" });
-          setMessage("Email integration test logged.");
+          const log = await request<EmailLog>(`/api/email-integrations/${companyId}/test`, { method: "POST" });
+          const testMessage = log.status === "SENT_VIA_SMTP"
+            ? `Test email sent to ${log.toEmail}.`
+            : log.status === "SIMULATED"
+              ? "Email test simulated only. Change Send Mode to Live SMTP to send a real email."
+              : `Email test ${log.status}. Check Email Log for details.`;
+          setMessage(testMessage);
           await loadSummary();
         } catch (error) {
           setMessage(error instanceof Error ? error.message : "Could not test email integration");
